@@ -48,6 +48,7 @@ pub enum Token {
     Var,
     While,
 
+    // End of file
     Eof,
 }
 
@@ -141,7 +142,7 @@ pub fn token(mut source: &str) -> Result<(Token, &str), TokenError> {
     ))
 }
 
-fn maximal<'a, T>(
+fn maximal<'a, T: std::fmt::Debug>(
     parsers: &[fn(&str) -> Option<(T, &str)>],
     source: &'a str,
 ) -> Option<(T, &'a str)> {
@@ -150,7 +151,7 @@ fn maximal<'a, T>(
 
     let matching_parsers = parsers.iter().filter_map(|parser| parser(source));
     for (m, rest) in matching_parsers {
-        let left = source.len() - rest.len();
+        let left = rest.len();
         if left < min_left {
             min_left = left;
             max_match = Some((m, rest));
@@ -402,6 +403,18 @@ mod test {
             Token::Equal,
             Token::True,
             Token::Semicolon,
+            Token::Eof,
+        ];
+        assert_eq!(tokens(source).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_double_equal() {
+        let source = "a==b";
+        let expected = vec![
+            Token::Identifier("a".to_string()),
+            Token::EqualEqual,
+            Token::Identifier("b".to_string()),
             Token::Eof,
         ];
         assert_eq!(tokens(source).unwrap(), expected);

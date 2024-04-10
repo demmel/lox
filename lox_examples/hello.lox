@@ -1,1 +1,9 @@
+// I'm a comment.  The compiler, ignores me.
 print "Hello, world!";
+
+var a = 1;
+var b = 2;
+
+if ( a == b) {
+    var x = 1;
+}
