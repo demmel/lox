@@ -1,6 +1,6 @@
 use justerror::Error;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Single-character tokens
     LeftParen,
@@ -187,53 +187,153 @@ fn comment(source: &str) -> Option<((), &str)> {
     }
 }
 
-macro_rules! match_literal {
-    ($name:ident, $word:literal, $token:expr) => {
-        fn $name(source: &str) -> Option<(Token, &str)> {
-            if source.starts_with($word) {
-                Some(($token, &source[$word.len()..]))
-            } else {
-                None
-            }
-        }
-    };
+fn literal<'a>(source: &'a str, literal: &str, token: Token) -> Option<(Token, &'a str)> {
+    if source.starts_with(literal) {
+        Some((token.clone(), &source[literal.len()..]))
+    } else {
+        None
+    }
 }
 
-match_literal! { left_paren, "(", Token::LeftParen }
-match_literal! { right_paren, ")", Token::RightParen }
-match_literal! { left_brace, "{", Token::LeftBrace }
-match_literal! { right_brace, "}", Token::RightBrace }
-match_literal! { comma, ",", Token::Comma }
-match_literal! { dot, ".", Token::Dot }
-match_literal! { minus, "-", Token::Minus }
-match_literal! { plus, "+", Token::Plus }
-match_literal! { semicolon, ";", Token::Semicolon }
-match_literal! { slash, "/", Token::Slash }
-match_literal! { star, "*", Token::Star }
-match_literal! { bang, "!", Token::Bang }
-match_literal! { equal, "=", Token::Equal }
-match_literal! { greater, ">", Token::Greater }
-match_literal! { less, "<", Token::Less }
-match_literal! { bang_equal, "!=", Token::BangEqual }
-match_literal! { equal_equal, "==", Token::EqualEqual }
-match_literal! { greater_equal, ">=", Token::GreaterEqual }
-match_literal! { less_equal, "<=", Token::LessEqual }
-match_literal! { and, "and", Token::And }
-match_literal! { class, "class", Token::Class }
-match_literal! { else_, "else", Token::Else }
-match_literal! { false_, "false", Token::False }
-match_literal! { fun, "fun", Token::Fun }
-match_literal! { for_, "for", Token::For }
-match_literal! { if_, "if", Token::If }
-match_literal! { nil, "nil", Token::Nil }
-match_literal! { or, "or", Token::Or }
-match_literal! { print_, "print", Token::Print }
-match_literal! { return_, "return", Token::Return }
-match_literal! { super_, "super", Token::Super }
-match_literal! { this, "this", Token::This }
-match_literal! { true_, "true", Token::True }
-match_literal! { var, "var", Token::Var }
-match_literal! { while_, "while", Token::While }
+fn left_paren(source: &str) -> Option<(Token, &str)> {
+    literal(source, "(", Token::LeftParen)
+}
+
+fn right_paren(source: &str) -> Option<(Token, &str)> {
+    literal(source, ")", Token::RightParen)
+}
+
+fn left_brace(source: &str) -> Option<(Token, &str)> {
+    literal(source, "{", Token::LeftBrace)
+}
+
+fn right_brace(source: &str) -> Option<(Token, &str)> {
+    literal(source, "}", Token::RightBrace)
+}
+
+fn comma(source: &str) -> Option<(Token, &str)> {
+    literal(source, ",", Token::Comma)
+}
+
+fn dot(source: &str) -> Option<(Token, &str)> {
+    literal(source, ".", Token::Dot)
+}
+
+fn minus(source: &str) -> Option<(Token, &str)> {
+    literal(source, "-", Token::Minus)
+}
+
+fn plus(source: &str) -> Option<(Token, &str)> {
+    literal(source, "+", Token::Plus)
+}
+
+fn semicolon(source: &str) -> Option<(Token, &str)> {
+    literal(source, ";", Token::Semicolon)
+}
+
+fn slash(source: &str) -> Option<(Token, &str)> {
+    literal(source, "/", Token::Slash)
+}
+
+fn star(source: &str) -> Option<(Token, &str)> {
+    literal(source, "*", Token::Star)
+}
+
+fn bang(source: &str) -> Option<(Token, &str)> {
+    literal(source, "!", Token::Bang)
+}
+
+fn bang_equal(source: &str) -> Option<(Token, &str)> {
+    literal(source, "!=", Token::BangEqual)
+}
+
+fn equal(source: &str) -> Option<(Token, &str)> {
+    literal(source, "=", Token::Equal)
+}
+
+fn equal_equal(source: &str) -> Option<(Token, &str)> {
+    literal(source, "==", Token::EqualEqual)
+}
+
+fn greater(source: &str) -> Option<(Token, &str)> {
+    literal(source, ">", Token::Greater)
+}
+
+fn greater_equal(source: &str) -> Option<(Token, &str)> {
+    literal(source, ">=", Token::GreaterEqual)
+}
+
+fn less(source: &str) -> Option<(Token, &str)> {
+    literal(source, "<", Token::Less)
+}
+
+fn less_equal(source: &str) -> Option<(Token, &str)> {
+    literal(source, "<=", Token::LessEqual)
+}
+
+fn and(source: &str) -> Option<(Token, &str)> {
+    literal(source, "and", Token::And)
+}
+
+fn class(source: &str) -> Option<(Token, &str)> {
+    literal(source, "class", Token::Class)
+}
+
+fn else_(source: &str) -> Option<(Token, &str)> {
+    literal(source, "else", Token::Else)
+}
+
+fn false_(source: &str) -> Option<(Token, &str)> {
+    literal(source, "false", Token::False)
+}
+
+fn fun(source: &str) -> Option<(Token, &str)> {
+    literal(source, "fun", Token::Fun)
+}
+
+fn for_(source: &str) -> Option<(Token, &str)> {
+    literal(source, "for", Token::For)
+}
+
+fn if_(source: &str) -> Option<(Token, &str)> {
+    literal(source, "if", Token::If)
+}
+
+fn nil(source: &str) -> Option<(Token, &str)> {
+    literal(source, "nil", Token::Nil)
+}
+
+fn or(source: &str) -> Option<(Token, &str)> {
+    literal(source, "or", Token::Or)
+}
+
+fn print_(source: &str) -> Option<(Token, &str)> {
+    literal(source, "print", Token::Print)
+}
+
+fn return_(source: &str) -> Option<(Token, &str)> {
+    literal(source, "return", Token::Return)
+}
+
+fn super_(source: &str) -> Option<(Token, &str)> {
+    literal(source, "super", Token::Super)
+}
+
+fn this(source: &str) -> Option<(Token, &str)> {
+    literal(source, "this", Token::This)
+}
+
+fn true_(source: &str) -> Option<(Token, &str)> {
+    literal(source, "true", Token::True)
+}
+
+fn var(source: &str) -> Option<(Token, &str)> {
+    literal(source, "var", Token::Var)
+}
+
+fn while_(source: &str) -> Option<(Token, &str)> {
+    literal(source, "while", Token::While)
+}
 
 fn identifier(source: &str) -> Option<(Token, &str)> {
     let mut chars = source.chars();
