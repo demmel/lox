@@ -1,6 +1,6 @@
 mod tokenizer;
 
-use std::{cell::RefCell, io::Write, str::FromStr};
+use std::io::Write;
 
 use clap::{Args, Parser, Subcommand};
 use justerror::Error;
