@@ -1,7 +1,10 @@
-use std::io::Write;
+mod tokenizer;
+
+use std::{cell::RefCell, io::Write, str::FromStr};
 
 use clap::{Args, Parser, Subcommand};
 use justerror::Error;
+use tokenizer::{tokens, TokensError};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -31,10 +34,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match args.command() {
         Command::Repl => {
-            repl()?;
+            repl_command()?;
         }
         Command::Run(args) => {
-            run(args)?;
+            run_command(args)?;
         }
     }
 
@@ -42,11 +45,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[Error]
-enum ReplError {
+enum ReplCommandError {
     Io(#[from] std::io::Error),
+    Run(#[from] RunError),
 }
 
-fn repl() -> Result<(), ReplError> {
+fn repl_command() -> Result<(), ReplCommandError> {
     println!("Welcome to the Lox REPL!");
     println!("EOF to exit. (Ctrl+D on *nix, Ctrl+Z on Windows)");
     loop {
@@ -62,7 +66,12 @@ fn repl() -> Result<(), ReplError> {
 
         let trimmed_input = input.trim();
 
-        println!("{}", trimmed_input);
+        match run(trimmed_input) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Error: {}", e);
+            }
+        }
 
         input.clear()
     }
@@ -70,12 +79,26 @@ fn repl() -> Result<(), ReplError> {
 }
 
 #[Error]
-enum RunError {
+enum RuncCommandError {
     Io(#[from] std::io::Error),
+    Run(#[from] RunError),
 }
 
-fn run(args: &RunArgs) -> Result<(), RunError> {
+fn run_command(args: &RunArgs) -> Result<(), RuncCommandError> {
     let file = std::fs::read_to_string(&args.file)?;
-    println!("{}", file);
+    run(&file)?;
+    Ok(())
+}
+
+#[Error]
+enum RunError {
+    Tokenize(#[from] TokensError),
+}
+
+fn run(source: &str) -> Result<(), RunError> {
+    let tokens = tokens(source)?;
+    for token in tokens {
+        println!("{:?}", token);
+    }
     Ok(())
 }
