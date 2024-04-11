@@ -376,7 +376,7 @@ fn string(source: &str) -> Option<(Token, &str)> {
 fn number(source: &str) -> Option<(Token, &str)> {
     let mut chars = source.chars().peekable();
     let first = chars.next()?;
-    if !first.is_ascii_digit() && first != '.' && first != '-' {
+    if !first.is_ascii_digit() && first != '.' {
         return None;
     }
 
