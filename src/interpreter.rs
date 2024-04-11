@@ -2,7 +2,11 @@ use std::fmt::Display;
 
 use justerror::Error;
 
-use crate::ast::{Expression, InfixOperator, Literal, UnaryOperator};
+use crate::{
+    ast::{Expression, InfixOperator, Literal, UnaryOperator},
+    parser::{expression, ParseError},
+    tokenizer::{tokens, Token, TokenizeError},
+};
 
 #[derive(Debug)]
 pub enum Value {
@@ -23,8 +27,12 @@ impl Display for Value {
     }
 }
 
+pub struct Interpreter;
+
 #[Error]
 pub enum InterpretError {
+    Tokenize(#[from] TokenizeError),
+    Parse(#[from] ParseError),
     InvalidLess(Value, Value),
     InvalidLessEqual(Value, Value),
     InvalidGreater(Value, Value),
@@ -35,6 +43,27 @@ pub enum InterpretError {
     InvalidDiv(Value, Value),
     InvalidNegate(Value, Value),
     InvalidNot(Value),
+}
+
+impl Interpreter {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn interpret(&mut self, source: &str) -> Result<Value, InterpretError> {
+        let mut tokens = &tokens(source)?[..];
+
+        let value = loop {
+            let (expression, remaining) = expression(&tokens)?;
+            tokens = remaining;
+            let value = evaluate(&expression)?;
+            if tokens.is_empty() || tokens.len() == 0 && tokens[0] == Token::Eof {
+                break value;
+            }
+        };
+
+        Ok(value)
+    }
 }
 
 pub fn evaluate(expression: &Expression) -> Result<Value, InterpretError> {

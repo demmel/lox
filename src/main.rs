@@ -6,10 +6,10 @@ mod tokenizer;
 use std::io::Write;
 
 use clap::{Args, Parser, Subcommand};
+use interpreter::InterpretError;
 use justerror::Error;
-use tokenizer::{tokens, TokenizeError};
 
-use crate::{interpreter::evaluate, parser::expression};
+use crate::interpreter::Interpreter;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -52,12 +52,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[Error]
 enum ReplCommandError {
     Io(#[from] std::io::Error),
-    Run(#[from] RunError),
+    Interpret(#[from] interpreter::InterpretError),
 }
 
 fn repl_command() -> Result<(), ReplCommandError> {
     println!("Welcome to the Lox REPL!");
     println!("EOF to exit. (Ctrl+D on *nix, Ctrl+Z on Windows)");
+
+    let mut interpreter = Interpreter::new();
+
     loop {
         let mut input = String::new();
 
@@ -70,13 +73,8 @@ fn repl_command() -> Result<(), ReplCommandError> {
         }
 
         let trimmed_input = input.trim();
-
-        match run(trimmed_input) {
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("Error: {}", e);
-            }
-        }
+        let value = interpreter.interpret(&trimmed_input)?;
+        println!("{}", value);
 
         input.clear()
     }
@@ -86,26 +84,12 @@ fn repl_command() -> Result<(), ReplCommandError> {
 #[Error]
 enum RuncCommandError {
     Io(#[from] std::io::Error),
-    Run(#[from] RunError),
+    Interpret(#[from] InterpretError),
 }
 
 fn run_command(args: &RunArgs) -> Result<(), RuncCommandError> {
     let file = std::fs::read_to_string(&args.file)?;
-    run(&file)?;
-    Ok(())
-}
-
-#[Error]
-enum RunError {
-    Tokenize(#[from] TokenizeError),
-    Parse(#[from] parser::ParseError),
-    Interpret(#[from] interpreter::InterpretError),
-}
-
-fn run(source: &str) -> Result<(), RunError> {
-    let tokens = tokens(source)?;
-    let (expression, remaining) = expression(&tokens)?;
-    let value = evaluate(&expression)?;
-    println!("{}", value);
+    let mut interpreter = Interpreter::new();
+    interpreter.interpret(&file)?;
     Ok(())
 }
