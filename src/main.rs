@@ -5,7 +5,7 @@ use std::io::Write;
 
 use clap::{Args, Parser, Subcommand};
 use justerror::Error;
-use tokenizer::{tokens, TokensError};
+use tokenizer::{tokens, TokenizeError};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -93,7 +93,7 @@ fn run_command(args: &RunArgs) -> Result<(), RuncCommandError> {
 
 #[Error]
 enum RunError {
-    Tokenize(#[from] TokensError),
+    Tokenize(#[from] TokenizeError),
 }
 
 fn run(source: &str) -> Result<(), RunError> {

@@ -55,11 +55,11 @@ pub enum Token {
 impl Eq for Token {}
 
 #[Error]
-pub enum TokensError {
-    TokenError(#[from] TokenError),
+pub enum TokenizeError {
+    UnexpectedCharacter(char),
 }
 
-pub fn tokens(source: &str) -> Result<Vec<Token>, TokensError> {
+pub fn tokens(source: &str) -> Result<Vec<Token>, TokenizeError> {
     let mut tokens = Vec::new();
     let mut remaining = source;
 
@@ -76,12 +76,7 @@ pub fn tokens(source: &str) -> Result<Vec<Token>, TokensError> {
     Ok(tokens)
 }
 
-#[Error]
-pub enum TokenError {
-    UnexpectedCharacter(char),
-}
-
-pub fn token(mut source: &str) -> Result<(Token, &str), TokenError> {
+pub fn token(mut source: &str) -> Result<(Token, &str), TokenizeError> {
     while let Some((_, rest)) = maximal(&[whitespace, comment], source) {
         source = rest;
     }
@@ -137,7 +132,7 @@ pub fn token(mut source: &str) -> Result<(Token, &str), TokenError> {
         ],
         source,
     )
-    .ok_or(TokenError::UnexpectedCharacter(
+    .ok_or(TokenizeError::UnexpectedCharacter(
         source.chars().next().unwrap(),
     ))
 }
