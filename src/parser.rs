@@ -90,7 +90,7 @@ impl Display for UnaryOperator {
 
 #[Error]
 pub enum ParseError {
-    UnexpectedToken,
+    ExpectedExpression,
 }
 
 pub fn expression(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
@@ -181,7 +181,7 @@ fn unary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
 
 fn primary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
     let Some(token) = tokens.first() else {
-        return Err(ParseError::UnexpectedToken);
+        return Err(ParseError::ExpectedExpression);
     };
 
     match token {
@@ -197,9 +197,9 @@ fn primary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
             let (expr, rest) = expression(&tokens[1..])?;
             match rest.first() {
                 Some(Token::RightParen) => Ok((Expression::Grouping(Box::new(expr)), &rest[1..])),
-                _ => Err(ParseError::UnexpectedToken),
+                _ => Err(ParseError::ExpectedExpression),
             }
         }
-        _ => Err(ParseError::UnexpectedToken),
+        _ => Err(ParseError::ExpectedExpression),
     }
 }
