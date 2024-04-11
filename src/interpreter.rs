@@ -82,6 +82,9 @@ pub fn evaluate(expression: &Expression) -> Result<Value, InterpretError> {
                 },
                 InfixOperator::Plus => match (a, b) {
                     (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
+                    (Value::String(a), Value::String(b)) => {
+                        Ok(Value::String(format!("{}{}", a, b)))
+                    }
                     (a, b) => Err(InterpretError::InvalidAdd(a, b)),
                 },
                 InfixOperator::Minus => match (a, b) {
