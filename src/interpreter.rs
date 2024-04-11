@@ -51,7 +51,14 @@ pub fn evaluate(expression: &Expression) -> Result<Value, InterpretError> {
             let b = evaluate(&b)?;
             match op {
                 InfixOperator::Equal => match (a, b) {
-                    (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a == b)),
+                    (Value::Number(a), Value::Number(b)) => {
+                        Ok(Value::Boolean(if a.is_nan() && b.is_nan() {
+                            // Lox treats NaN as equal to itself
+                            true
+                        } else {
+                            a == b
+                        }))
+                    }
                     (Value::String(a), Value::String(b)) => Ok(Value::Boolean(a == b)),
                     (Value::Boolean(a), Value::Boolean(b)) => Ok(Value::Boolean(a == b)),
                     (Value::Nil, Value::Nil) => Ok(Value::Boolean(true)),
