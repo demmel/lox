@@ -1,4 +1,5 @@
 mod ast;
+mod interpreter;
 mod parser;
 mod tokenizer;
 
@@ -8,7 +9,7 @@ use clap::{Args, Parser, Subcommand};
 use justerror::Error;
 use tokenizer::{tokens, TokenizeError};
 
-use crate::parser::expression;
+use crate::{interpreter::evaluate, parser::expression};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -98,11 +99,13 @@ fn run_command(args: &RunArgs) -> Result<(), RuncCommandError> {
 enum RunError {
     Tokenize(#[from] TokenizeError),
     Parse(#[from] parser::ParseError),
+    Interpret(#[from] interpreter::InterpretError),
 }
 
 fn run(source: &str) -> Result<(), RunError> {
     let tokens = tokens(source)?;
     let (expression, remaining) = expression(&tokens)?;
-    println!("{}", expression);
+    let value = evaluate(&expression)?;
+    println!("{}", value);
     Ok(())
 }
