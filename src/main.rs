@@ -101,7 +101,7 @@ enum RunError {
 
 fn run(source: &str) -> Result<(), RunError> {
     let tokens = tokens(source)?;
-    let expression = expression(&tokens)?;
-    println!("{:?}", expression);
+    let (expression, remaining) = expression(&tokens)?;
+    println!("{}", expression);
     Ok(())
 }
