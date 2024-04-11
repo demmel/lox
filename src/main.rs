@@ -7,6 +7,8 @@ use clap::{Args, Parser, Subcommand};
 use justerror::Error;
 use tokenizer::{tokens, TokenizeError};
 
+use crate::parser::expression;
+
 #[derive(Debug, Parser)]
 struct Cli {
     #[command(subcommand)]
@@ -94,12 +96,12 @@ fn run_command(args: &RunArgs) -> Result<(), RuncCommandError> {
 #[Error]
 enum RunError {
     Tokenize(#[from] TokenizeError),
+    Parse(#[from] parser::ParseError),
 }
 
 fn run(source: &str) -> Result<(), RunError> {
     let tokens = tokens(source)?;
-    for token in tokens {
-        println!("{:?}", token);
-    }
+    let expression = expression(&tokens)?;
+    println!("{:?}", expression);
     Ok(())
 }
