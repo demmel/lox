@@ -12,6 +12,7 @@ pub enum Statement {
 
 #[derive(Debug)]
 pub enum Expression {
+    Identifier(String),
     Literal(Literal),
     Grouping(Box<Expression>),
     Binary(Box<Expression>, InfixOperator, Box<Expression>),
@@ -72,6 +73,7 @@ impl Display for Expression {
             Expression::Grouping(expr) => write!(f, "({})", expr),
             Expression::Binary(left, op, right) => write!(f, "({} {} {})", op, left, right),
             Expression::Unary(op, right) => write!(f, "({} {})", op, right),
+            Expression::Identifier(name) => write!(f, "{}", name),
         }
     }
 }

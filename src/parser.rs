@@ -200,6 +200,7 @@ fn primary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
                 _ => Err(ParseError::ExpectedExpression),
             }
         }
+        TokenType::Identifier(name) => Ok((Expression::Identifier(name.clone()), &tokens[1..])),
         _ => Err(ParseError::ExpectedExpression),
     }
 }

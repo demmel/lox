@@ -8,7 +8,7 @@ use crate::{
     tokenizer::{tokens, TokenizeError},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Number(f64),
     String(String),
@@ -53,6 +53,7 @@ pub enum InterpretError {
     InvalidDiv(Value, Value),
     InvalidNegate(Value, Value),
     InvalidNot(Value),
+    UndeclaredVariable(String),
 }
 
 impl Interpreter {
@@ -74,104 +75,109 @@ impl Interpreter {
     fn execute(&mut self, stmt: &Statement) -> Result<(), InterpretError> {
         match stmt {
             Statement::Expression(expression) => {
-                evaluate(expression)?;
+                self.evaluate(expression)?;
             }
             Statement::Print(expression) => {
-                let value = evaluate(expression)?;
+                let value = self.evaluate(expression)?;
                 println!("{}", value);
             }
             Statement::VarDeclaration(identifier, expression) => {
-                let value = evaluate(expression)?;
+                let value = self.evaluate(expression)?;
                 self.variables.insert(identifier.clone(), value);
             }
         }
         Ok(())
     }
-}
 
-pub fn evaluate(expression: &Expression) -> Result<Value, InterpretError> {
-    match expression {
-        Expression::Literal(literal) => match literal {
-            Literal::Number(n) => Ok(Value::Number(*n)),
-            Literal::String(s) => Ok(Value::String(s.clone())),
-            Literal::Boolean(b) => Ok(Value::Boolean(*b)),
-            Literal::Nil => Ok(Value::Nil),
-        },
-        Expression::Grouping(x) => evaluate(&x),
-        Expression::Binary(a, op, b) => {
-            let a = evaluate(&a)?;
-            let b = evaluate(&b)?;
-            match op {
-                InfixOperator::Equal => match (a, b) {
-                    (Value::Number(a), Value::Number(b)) => {
-                        Ok(Value::Boolean(if a.is_nan() && b.is_nan() {
-                            // Lox treats NaN as equal to itself
-                            true
-                        } else {
-                            a == b
-                        }))
-                    }
-                    (Value::String(a), Value::String(b)) => Ok(Value::Boolean(a == b)),
-                    (Value::Boolean(a), Value::Boolean(b)) => Ok(Value::Boolean(a == b)),
-                    (Value::Nil, Value::Nil) => Ok(Value::Boolean(true)),
-                    _ => Ok(Value::Boolean(false)),
-                },
-                InfixOperator::NotEqual => match (a, b) {
-                    (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a != b)),
-                    (Value::String(a), Value::String(b)) => Ok(Value::Boolean(a != b)),
-                    (Value::Boolean(a), Value::Boolean(b)) => Ok(Value::Boolean(a != b)),
-                    (Value::Nil, Value::Nil) => Ok(Value::Boolean(false)),
-                    _ => Ok(Value::Boolean(true)),
-                },
-                InfixOperator::LessThan => match (a, b) {
-                    (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a < b)),
-                    (a, b) => Err(InterpretError::InvalidLess(a, b)),
-                },
-                InfixOperator::LessThanOrEqual => match (a, b) {
-                    (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a <= b)),
-                    (a, b) => Err(InterpretError::InvalidLessEqual(a, b)),
-                },
-                InfixOperator::GreaterThan => match (a, b) {
-                    (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a > b)),
-                    (a, b) => Err(InterpretError::InvalidGreater(a, b)),
-                },
-                InfixOperator::GreaterThanOrEqual => match (a, b) {
-                    (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a >= b)),
-                    (a, b) => Err(InterpretError::InvalidGreaterEqual(a, b)),
-                },
-                InfixOperator::Plus => match (a, b) {
-                    (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
-                    (Value::String(a), Value::String(b)) => {
-                        Ok(Value::String(format!("{}{}", a, b)))
-                    }
-                    (a, b) => Err(InterpretError::InvalidAdd(a, b)),
-                },
-                InfixOperator::Minus => match (a, b) {
-                    (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a - b)),
-                    (a, b) => Err(InterpretError::InvalidSub(a, b)),
-                },
-                InfixOperator::Multiply => match (a, b) {
-                    (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a * b)),
-                    (a, b) => Err(InterpretError::InvalidMult(a, b)),
-                },
-                InfixOperator::Divide => match (a, b) {
-                    (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a / b)),
-                    (a, b) => Err(InterpretError::InvalidDiv(a, b)),
-                },
+    fn evaluate(&self, expression: &Expression) -> Result<Value, InterpretError> {
+        match expression {
+            Expression::Literal(literal) => match literal {
+                Literal::Number(n) => Ok(Value::Number(*n)),
+                Literal::String(s) => Ok(Value::String(s.clone())),
+                Literal::Boolean(b) => Ok(Value::Boolean(*b)),
+                Literal::Nil => Ok(Value::Nil),
+            },
+            Expression::Grouping(x) => self.evaluate(&x),
+            Expression::Binary(a, op, b) => {
+                let a = self.evaluate(&a)?;
+                let b = self.evaluate(&b)?;
+                match op {
+                    InfixOperator::Equal => match (a, b) {
+                        (Value::Number(a), Value::Number(b)) => {
+                            Ok(Value::Boolean(if a.is_nan() && b.is_nan() {
+                                // Lox treats NaN as equal to itself
+                                true
+                            } else {
+                                a == b
+                            }))
+                        }
+                        (Value::String(a), Value::String(b)) => Ok(Value::Boolean(a == b)),
+                        (Value::Boolean(a), Value::Boolean(b)) => Ok(Value::Boolean(a == b)),
+                        (Value::Nil, Value::Nil) => Ok(Value::Boolean(true)),
+                        _ => Ok(Value::Boolean(false)),
+                    },
+                    InfixOperator::NotEqual => match (a, b) {
+                        (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a != b)),
+                        (Value::String(a), Value::String(b)) => Ok(Value::Boolean(a != b)),
+                        (Value::Boolean(a), Value::Boolean(b)) => Ok(Value::Boolean(a != b)),
+                        (Value::Nil, Value::Nil) => Ok(Value::Boolean(false)),
+                        _ => Ok(Value::Boolean(true)),
+                    },
+                    InfixOperator::LessThan => match (a, b) {
+                        (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a < b)),
+                        (a, b) => Err(InterpretError::InvalidLess(a, b)),
+                    },
+                    InfixOperator::LessThanOrEqual => match (a, b) {
+                        (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a <= b)),
+                        (a, b) => Err(InterpretError::InvalidLessEqual(a, b)),
+                    },
+                    InfixOperator::GreaterThan => match (a, b) {
+                        (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a > b)),
+                        (a, b) => Err(InterpretError::InvalidGreater(a, b)),
+                    },
+                    InfixOperator::GreaterThanOrEqual => match (a, b) {
+                        (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a >= b)),
+                        (a, b) => Err(InterpretError::InvalidGreaterEqual(a, b)),
+                    },
+                    InfixOperator::Plus => match (a, b) {
+                        (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
+                        (Value::String(a), Value::String(b)) => {
+                            Ok(Value::String(format!("{}{}", a, b)))
+                        }
+                        (a, b) => Err(InterpretError::InvalidAdd(a, b)),
+                    },
+                    InfixOperator::Minus => match (a, b) {
+                        (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a - b)),
+                        (a, b) => Err(InterpretError::InvalidSub(a, b)),
+                    },
+                    InfixOperator::Multiply => match (a, b) {
+                        (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a * b)),
+                        (a, b) => Err(InterpretError::InvalidMult(a, b)),
+                    },
+                    InfixOperator::Divide => match (a, b) {
+                        (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a / b)),
+                        (a, b) => Err(InterpretError::InvalidDiv(a, b)),
+                    },
+                }
             }
-        }
-        Expression::Unary(op, x) => {
-            let x = evaluate(&x)?;
-            match op {
-                UnaryOperator::Negate => match x {
-                    Value::Number(n) => Ok(Value::Number(-n)),
-                    x => Err(InterpretError::InvalidNegate(x, Value::Nil)),
-                },
-                UnaryOperator::Not => match x {
-                    Value::Boolean(b) => Ok(Value::Boolean(!b)),
-                    x => Err(InterpretError::InvalidNot(x)),
-                },
+            Expression::Unary(op, x) => {
+                let x = self.evaluate(&x)?;
+                match op {
+                    UnaryOperator::Negate => match x {
+                        Value::Number(n) => Ok(Value::Number(-n)),
+                        x => Err(InterpretError::InvalidNegate(x, Value::Nil)),
+                    },
+                    UnaryOperator::Not => match x {
+                        Value::Boolean(b) => Ok(Value::Boolean(!b)),
+                        x => Err(InterpretError::InvalidNot(x)),
+                    },
+                }
             }
+            Expression::Identifier(identifier) => self
+                .variables
+                .get(identifier)
+                .cloned()
+                .ok_or_else(|| InterpretError::UndeclaredVariable(identifier.clone())),
         }
     }
 }
