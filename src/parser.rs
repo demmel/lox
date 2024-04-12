@@ -71,14 +71,14 @@ fn declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError> {
 }
 
 fn var_declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError> {
-    let name = match tokens.get(1).map(Token::token_type) {
+    let name = match tokens.first().map(Token::token_type) {
         Some(TokenType::Identifier(name)) => name.clone(),
         _ => return Err(ParseError::ExpectedIdentifier),
     };
 
-    let (expr, rest) = match tokens.get(2).map(Token::token_type) {
-        Some(TokenType::Equal) => expression(&tokens[3..])?,
-        _ => (Expression::Literal(Literal::Nil), &tokens[1..]),
+    let (expr, rest) = match tokens.get(1).map(Token::token_type) {
+        Some(TokenType::Equal) => expression(&tokens[2..])?,
+        _ => (Expression::Literal(Literal::Nil), &tokens[0..]),
     };
 
     match rest.first().map(Token::token_type) {
@@ -103,7 +103,7 @@ fn expression_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), Parse
 }
 
 fn print_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError> {
-    let (expr, rest) = expression(&tokens[1..])?;
+    let (expr, rest) = expression(tokens)?;
     match rest.first().map(Token::token_type) {
         Some(TokenType::Semicolon) => Ok((Statement::Print(expr), &rest[1..])),
         _ => Err(ParseError::ExpectedSemicolon),
