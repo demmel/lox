@@ -268,6 +268,7 @@ fn literal<'a>(
     token_type: TokenType,
 ) -> Option<(Token, TokenizerState<'a>)> {
     if state.remaining.starts_with(literal) {
+        let count = literal.chars().count();
         Some((
             Token {
                 token_type,
@@ -275,12 +276,12 @@ fn literal<'a>(
                     start_line: state.line,
                     start_column: state.column,
                     end_line: state.line,
-                    end_column: state.column + literal.len(),
+                    end_column: state.column + count,
                 },
             },
             TokenizerState {
                 remaining: &state.remaining[literal.len()..],
-                column: state.column + literal.len(),
+                column: state.column + count,
                 ..state
             },
         ))
@@ -437,11 +438,10 @@ fn identifier(state: TokenizerState) -> Option<(Token, TokenizerState)> {
         return None;
     }
 
-    let len = first.len_utf8()
-        + chars
-            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-            .map(char::len_utf8)
-            .sum::<usize>();
+    let take_alphas = chars.take_while(|c| c.is_ascii_alphanumeric() || *c == '_');
+
+    let len = first.len_utf8() + take_alphas.clone().map(char::len_utf8).sum::<usize>();
+    let count = 1 + take_alphas.count();
 
     if len > 0 {
         Some((
@@ -451,12 +451,12 @@ fn identifier(state: TokenizerState) -> Option<(Token, TokenizerState)> {
                     start_line: state.line,
                     start_column: state.column,
                     end_line: state.line,
-                    end_column: state.column + len,
+                    end_column: state.column + count,
                 },
             },
             TokenizerState {
                 remaining: &state.remaining[len..],
-                column: state.column + len,
+                column: state.column + count,
                 ..state
             },
         ))
@@ -472,8 +472,10 @@ fn string(state: TokenizerState) -> Option<(Token, TokenizerState)> {
 
     let mut chars = state.remaining.chars().skip(1);
     let mut len = 1;
+    let mut count = 1;
     while let Some(c) = chars.next() {
         len += c.len_utf8();
+        count += 1;
         match c {
             '"' => {
                 return Some((
@@ -483,12 +485,12 @@ fn string(state: TokenizerState) -> Option<(Token, TokenizerState)> {
                             start_line: state.line,
                             start_column: state.column,
                             end_line: state.line,
-                            end_column: state.column + len,
+                            end_column: state.column + count,
                         },
                     },
                     TokenizerState {
                         remaining: &state.remaining[len..],
-                        column: state.column + len,
+                        column: state.column + count,
                         ..state
                     },
                 ))
@@ -507,6 +509,7 @@ fn number(state: TokenizerState) -> Option<(Token, TokenizerState)> {
     }
 
     let mut len = first.len_utf8();
+    let mut count = 1;
 
     let mut phase = 0;
     if first == '.' {
@@ -523,6 +526,7 @@ fn number(state: TokenizerState) -> Option<(Token, TokenizerState)> {
                 }
                 chars.next();
                 len += c.len_utf8();
+                count += 1;
             }
             1 => {
                 if !c.is_ascii_digit() {
@@ -530,6 +534,7 @@ fn number(state: TokenizerState) -> Option<(Token, TokenizerState)> {
                 }
                 chars.next();
                 len += c.len_utf8();
+                count += 1;
             }
             _ => unreachable!(),
         }
@@ -542,12 +547,12 @@ fn number(state: TokenizerState) -> Option<(Token, TokenizerState)> {
                 start_line: state.line,
                 start_column: state.column,
                 end_line: state.line,
-                end_column: state.column + len,
+                end_column: state.column + count,
             },
         },
         TokenizerState {
             remaining: &state.remaining[len..],
-            column: state.column + len,
+            column: state.column + count,
             ..state
         },
     ))
