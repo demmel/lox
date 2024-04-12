@@ -66,10 +66,6 @@ impl Token {
     pub fn token_type(&self) -> &TokenType {
         &self.token_type
     }
-
-    pub fn span(&self) -> &Span {
-        &self.span
-    }
 }
 
 #[Error]
@@ -284,145 +280,49 @@ fn literal<'a>(
     }
 }
 
-fn left_paren(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "(", TokenType::LeftParen)
+macro_rules! literal {
+    ($name:ident, $literal:expr, $token_type:expr) => {
+        fn $name(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+            literal(state, $literal, $token_type)
+        }
+    };
 }
 
-fn right_paren(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, ")", TokenType::RightParen)
-}
-
-fn left_brace(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "{", TokenType::LeftBrace)
-}
-
-fn right_brace(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "}", TokenType::RightBrace)
-}
-
-fn comma(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, ",", TokenType::Comma)
-}
-
-fn dot(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, ".", TokenType::Dot)
-}
-
-fn minus(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "-", TokenType::Minus)
-}
-
-fn plus(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "+", TokenType::Plus)
-}
-
-fn semicolon(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, ";", TokenType::Semicolon)
-}
-
-fn slash(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "/", TokenType::Slash)
-}
-
-fn star(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "*", TokenType::Star)
-}
-
-fn bang(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "!", TokenType::Bang)
-}
-
-fn bang_equal(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "!=", TokenType::BangEqual)
-}
-
-fn equal(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "=", TokenType::Equal)
-}
-
-fn equal_equal(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "==", TokenType::EqualEqual)
-}
-
-fn greater(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, ">", TokenType::Greater)
-}
-
-fn greater_equal(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, ">=", TokenType::GreaterEqual)
-}
-
-fn less(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "<", TokenType::Less)
-}
-
-fn less_equal(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "<=", TokenType::LessEqual)
-}
-
-fn and(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "and", TokenType::And)
-}
-
-fn class(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "class", TokenType::Class)
-}
-
-fn else_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "else", TokenType::Else)
-}
-
-fn false_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "false", TokenType::False)
-}
-
-fn fun(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "fun", TokenType::Fun)
-}
-
-fn for_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "for", TokenType::For)
-}
-
-fn if_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "if", TokenType::If)
-}
-
-fn nil(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "nil", TokenType::Nil)
-}
-
-fn or(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "or", TokenType::Or)
-}
-
-fn print_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "print", TokenType::Print)
-}
-
-fn return_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "return", TokenType::Return)
-}
-
-fn super_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "super", TokenType::Super)
-}
-
-fn this(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "this", TokenType::This)
-}
-
-fn true_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "true", TokenType::True)
-}
-
-fn var(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "var", TokenType::Var)
-}
-
-fn while_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    literal(state, "while", TokenType::While)
-}
+literal! {left_paren, "(", TokenType::LeftParen}
+literal! {right_paren, ")", TokenType::RightParen}
+literal! {left_brace, "{", TokenType::LeftBrace}
+literal! {right_brace, "}", TokenType::RightBrace}
+literal! {comma, ",", TokenType::Comma}
+literal! {dot, ".", TokenType::Dot}
+literal! {minus, "-", TokenType::Minus}
+literal! {plus, "+", TokenType::Plus}
+literal! {semicolon, ";", TokenType::Semicolon}
+literal! {slash, "/", TokenType::Slash}
+literal! {star, "*", TokenType::Star}
+literal! {bang, "!", TokenType::Bang}
+literal! {bang_equal, "!=", TokenType::BangEqual}
+literal! {equal, "=", TokenType::Equal}
+literal! {equal_equal, "==", TokenType::EqualEqual}
+literal! {greater, ">", TokenType::Greater}
+literal! {greater_equal, ">=", TokenType::GreaterEqual}
+literal! {less, "<", TokenType::Less}
+literal! {less_equal, "<=", TokenType::LessEqual}
+literal! {and, "and", TokenType::And}
+literal! {class, "class", TokenType::Class}
+literal! {else_, "else", TokenType::Else}
+literal! {false_, "false", TokenType::False}
+literal! {fun, "fun", TokenType::Fun}
+literal! {for_, "for", TokenType::For}
+literal! {if_, "if", TokenType::If}
+literal! {nil, "nil", TokenType::Nil}
+literal! {or, "or", TokenType::Or}
+literal! {print_, "print", TokenType::Print}
+literal! {return_, "return", TokenType::Return}
+literal! {super_, "super", TokenType::Super}
+literal! {this, "this", TokenType::This}
+literal! {true_, "true", TokenType::True}
+literal! {var, "var", TokenType::Var}
+literal! {while_, "while", TokenType::While}
 
 fn identifier(state: TokenizerState) -> Option<(Token, TokenizerState)> {
     let mut chars = state.remaining.chars();
