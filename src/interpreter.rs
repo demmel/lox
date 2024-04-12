@@ -179,10 +179,10 @@ impl Interpreter {
                 let value = self.evaluate(&expr)?;
                 if let Some(v) = self.variables.get_mut(name) {
                     *v = value.clone();
+                    Ok(value)
                 } else {
-                    return Err(InterpretError::UndeclaredVariable(name.clone()));
+                    Err(InterpretError::UndeclaredVariable(name.clone()))
                 }
-                Ok(value)
             }
         }
     }
