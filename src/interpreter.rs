@@ -89,8 +89,13 @@ impl Interpreter {
         Ok(())
     }
 
-    fn evaluate(&self, expression: &Expression) -> Result<Value, InterpretError> {
+    fn evaluate(&mut self, expression: &Expression) -> Result<Value, InterpretError> {
         match expression {
+            Expression::Identifier(identifier) => self
+                .variables
+                .get(identifier)
+                .cloned()
+                .ok_or_else(|| InterpretError::UndeclaredVariable(identifier.clone())),
             Expression::Literal(literal) => match literal {
                 Literal::Number(n) => Ok(Value::Number(*n)),
                 Literal::String(s) => Ok(Value::String(s.clone())),
@@ -173,11 +178,15 @@ impl Interpreter {
                     },
                 }
             }
-            Expression::Identifier(identifier) => self
-                .variables
-                .get(identifier)
-                .cloned()
-                .ok_or_else(|| InterpretError::UndeclaredVariable(identifier.clone())),
+            Expression::Assign(name, expr) => {
+                let value = self.evaluate(&expr)?;
+                if let Some(v) = self.variables.get_mut(name) {
+                    *v = value.clone();
+                } else {
+                    return Err(InterpretError::UndeclaredVariable(name.clone()));
+                }
+                Ok(value)
+            }
         }
     }
 }

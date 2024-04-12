@@ -17,6 +17,7 @@ pub enum Expression {
     Grouping(Box<Expression>),
     Binary(Box<Expression>, InfixOperator, Box<Expression>),
     Unary(UnaryOperator, Box<Expression>),
+    Assign(String, Box<Expression>),
 }
 
 #[derive(Debug)]
@@ -69,11 +70,12 @@ impl Display for Statement {
 impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Expression::Identifier(name) => write!(f, "{}", name),
             Expression::Literal(literal) => write!(f, "{}", literal),
             Expression::Grouping(expr) => write!(f, "({})", expr),
             Expression::Binary(left, op, right) => write!(f, "({} {} {})", op, left, right),
             Expression::Unary(op, right) => write!(f, "({} {})", op, right),
-            Expression::Identifier(name) => write!(f, "{}", name),
+            Expression::Assign(name, expr) => write!(f, "{} = {}", name, expr),
         }
     }
 }
