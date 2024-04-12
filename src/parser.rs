@@ -52,7 +52,7 @@ pub fn program(tokens: &[Token]) -> Result<Program, ParseErrors> {
         }
     }
 
-    if tokens.len() != 1 && tokens[0].token_type() != &TokenType::Eof {
+    if tokens.len() == 0 || tokens.len() > 1 || tokens[0].token_type() != &TokenType::Eof {
         errors.push(ParseError::ExpectedEof);
     }
 
@@ -78,7 +78,7 @@ fn var_declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError
 
     let (expr, rest) = match tokens.get(1).map(Token::token_type) {
         Some(TokenType::Equal) => expression(&tokens[2..])?,
-        _ => (Expression::Literal(Literal::Nil), &tokens[0..]),
+        _ => (Expression::Literal(Literal::Nil), tokens),
     };
 
     match rest.first().map(Token::token_type) {
