@@ -1,6 +1,7 @@
 mod ast;
 mod interpreter;
 mod parser;
+mod span;
 mod tokenizer;
 
 use std::io::Write;
