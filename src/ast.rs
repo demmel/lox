@@ -1,6 +1,16 @@
 use std::fmt::Display;
 
 #[derive(Debug)]
+pub struct Program(pub Vec<Statement>);
+
+#[derive(Debug)]
+pub enum Statement {
+    Expression(Expression),
+    VarDeclaration(String, Expression),
+    Print(Expression),
+}
+
+#[derive(Debug)]
 pub enum Expression {
     Literal(Literal),
     Grouping(Box<Expression>),
@@ -34,6 +44,25 @@ pub enum InfixOperator {
     Minus,
     Multiply,
     Divide,
+}
+
+impl Display for Program {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for statement in &self.0 {
+            writeln!(f, "{}", statement)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for Statement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Statement::Expression(expr) => write!(f, "{};", expr),
+            Statement::Print(expr) => write!(f, "print {};", expr),
+            Statement::VarDeclaration(name, expr) => write!(f, "var {} = {};", name, expr),
+        }
+    }
 }
 
 impl Display for Expression {

@@ -1,13 +1,94 @@
 use justerror::Error;
 
 use crate::{
-    ast::{Expression, InfixOperator, Literal, UnaryOperator},
+    ast::{Expression, InfixOperator, Literal, Program, Statement, UnaryOperator},
     tokenizer::{Token, TokenType},
 };
 
 #[Error]
 pub enum ParseError {
+    ExpectedPrint,
+    ExpectedVar,
+    ExpectedIdentifier,
     ExpectedExpression,
+    ExpectedSemicolon,
+    ExpectedEof,
+}
+
+pub fn program(tokens: &[Token]) -> Result<Program, ParseError> {
+    let mut statments = Vec::new();
+    let mut tokens = tokens;
+
+    while tokens.len() > 1 {
+        let (stmt, rest) = declaration(tokens)?;
+        statments.push(stmt);
+        tokens = rest;
+    }
+
+    if tokens.len() != 1 && tokens[0].token_type() != &TokenType::Eof {
+        return Err(ParseError::ExpectedEof);
+    }
+
+    Ok(Program(statments))
+}
+
+fn declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError> {
+    match tokens.first().map(Token::token_type) {
+        Some(TokenType::Var) => var_declaration(tokens),
+        _ => statement(tokens),
+    }
+}
+
+fn var_declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError> {
+    match tokens.first().map(Token::token_type) {
+        Some(TokenType::Var) => {
+            let name = match tokens.get(1).map(Token::token_type) {
+                Some(TokenType::Identifier(name)) => name.clone(),
+                _ => return Err(ParseError::ExpectedIdentifier),
+            };
+
+            let (expr, rest) = match tokens.get(2).map(Token::token_type) {
+                Some(TokenType::Equal) => expression(&tokens[3..])?,
+                _ => (Expression::Literal(Literal::Nil), &tokens[1..]),
+            };
+
+            match rest.first().map(Token::token_type) {
+                Some(TokenType::Semicolon) => {
+                    Ok((Statement::VarDeclaration(name, expr), &rest[1..]))
+                }
+                _ => Err(ParseError::ExpectedSemicolon),
+            }
+        }
+        _ => Err(ParseError::ExpectedVar),
+    }
+}
+
+fn statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError> {
+    match tokens.first().map(Token::token_type) {
+        Some(TokenType::Print) => print_statement(tokens),
+        _ => expression_statement(tokens),
+    }
+}
+
+fn expression_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError> {
+    let (expr, rest) = expression(tokens)?;
+    match rest.first().map(Token::token_type) {
+        Some(TokenType::Semicolon) => Ok((Statement::Expression(expr), &rest[1..])),
+        _ => Err(ParseError::ExpectedSemicolon),
+    }
+}
+
+fn print_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError> {
+    match tokens.first().map(Token::token_type) {
+        Some(TokenType::Print) => {
+            let (expr, rest) = expression(&tokens[1..])?;
+            match rest.first().map(Token::token_type) {
+                Some(TokenType::Semicolon) => Ok((Statement::Print(expr), &rest[1..])),
+                _ => Err(ParseError::ExpectedSemicolon),
+            }
+        }
+        _ => Err(ParseError::ExpectedPrint),
+    }
 }
 
 pub fn expression(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {

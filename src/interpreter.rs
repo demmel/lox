@@ -1,11 +1,11 @@
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
 use justerror::Error;
 
 use crate::{
-    ast::{Expression, InfixOperator, Literal, UnaryOperator},
-    parser::{expression, ParseError},
-    tokenizer::{tokens, TokenType, TokenizeError},
+    ast::{Expression, InfixOperator, Literal, Statement, UnaryOperator},
+    parser::{program, ParseError},
+    tokenizer::{tokens, TokenizeError},
 };
 
 #[derive(Debug)]
@@ -27,7 +27,17 @@ impl Display for Value {
     }
 }
 
-pub struct Interpreter;
+pub struct Interpreter {
+    variables: HashMap<String, Value>,
+}
+
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self {
+            variables: HashMap::new(),
+        }
+    }
+}
 
 #[Error]
 pub enum InterpretError {
@@ -47,22 +57,35 @@ pub enum InterpretError {
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
-    pub fn interpret(&mut self, source: &str) -> Result<Value, InterpretError> {
-        let mut tokens = &tokens(source)?[..];
+    pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
+        let tokens = &tokens(source)?[..];
+        let program = program(&tokens)?;
 
-        let value = loop {
-            let (expression, remaining) = expression(&tokens)?;
-            tokens = remaining;
-            let value = evaluate(&expression)?;
-            if tokens.is_empty() || tokens.len() == 0 && tokens[0].token_type() == &TokenType::Eof {
-                break value;
+        for stmt in program.0.iter() {
+            self.execute(stmt)?;
+        }
+
+        Ok(())
+    }
+
+    fn execute(&mut self, stmt: &Statement) -> Result<(), InterpretError> {
+        match stmt {
+            Statement::Expression(expression) => {
+                evaluate(expression)?;
             }
-        };
-
-        Ok(value)
+            Statement::Print(expression) => {
+                let value = evaluate(expression)?;
+                println!("{}", value);
+            }
+            Statement::VarDeclaration(identifier, expression) => {
+                let value = evaluate(expression)?;
+                self.variables.insert(identifier.clone(), value);
+            }
+        }
+        Ok(())
     }
 }
 
