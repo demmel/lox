@@ -5,7 +5,7 @@ use justerror::Error;
 use crate::{
     ast::{Expression, InfixOperator, Literal, UnaryOperator},
     parser::{expression, ParseError},
-    tokenizer::{tokens, Token, TokenizeError},
+    tokenizer::{tokens, TokenType, TokenizeError},
 };
 
 #[derive(Debug)]
@@ -57,7 +57,7 @@ impl Interpreter {
             let (expression, remaining) = expression(&tokens)?;
             tokens = remaining;
             let value = evaluate(&expression)?;
-            if tokens.is_empty() || tokens.len() == 0 && tokens[0] == Token::Eof {
+            if tokens.is_empty() || tokens.len() == 0 && tokens[0].token_type() == &TokenType::Eof {
                 break value;
             }
         };

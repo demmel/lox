@@ -1,7 +1,7 @@
 use justerror::Error;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Token {
+pub enum TokenType {
     // Single-character tokens
     LeftParen,
     RightParen,
@@ -52,21 +52,46 @@ pub enum Token {
     Eof,
 }
 
-impl Eq for Token {}
+impl Eq for TokenType {}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Token {
+    token_type: TokenType,
+    line: usize,
+    column: usize,
+}
+
+impl Token {
+    pub fn token_type(&self) -> &TokenType {
+        &self.token_type
+    }
+}
 
 #[Error]
 pub enum TokenizeError {
-    UnexpectedCharacter(char),
+    #[error(desc = "Unexpected character {0} at line {1}, column {2}")]
+    UnexpectedCharacter(char, usize, usize),
+}
+
+#[derive(Debug, Clone)]
+struct TokenizerState<'a> {
+    remaining: &'a str,
+    line: usize,
+    column: usize,
 }
 
 pub fn tokens(source: &str) -> Result<Vec<Token>, TokenizeError> {
     let mut tokens = Vec::new();
-    let mut remaining = source;
+    let mut state = TokenizerState {
+        remaining: source,
+        line: 1,
+        column: 1,
+    };
 
     loop {
-        let (token, rest) = token(remaining)?;
-        remaining = rest;
-        if matches!(token, Token::Eof) {
+        let (token, next_state) = token(state)?;
+        state = next_state;
+        if matches!(token.token_type, TokenType::Eof) {
             tokens.push(token);
             break;
         }
@@ -76,13 +101,20 @@ pub fn tokens(source: &str) -> Result<Vec<Token>, TokenizeError> {
     Ok(tokens)
 }
 
-pub fn token(mut source: &str) -> Result<(Token, &str), TokenizeError> {
-    while let Some((_, rest)) = maximal(&[whitespace, comment], source) {
-        source = rest;
+fn token(mut state: TokenizerState) -> Result<(Token, TokenizerState), TokenizeError> {
+    while let Some((_, next_state)) = maximal(&[whitespace, comment], state.clone()) {
+        state = next_state;
     }
 
-    if source.is_empty() {
-        return Ok((Token::Eof, source));
+    if state.remaining.is_empty() {
+        return Ok((
+            Token {
+                token_type: TokenType::Eof,
+                line: state.line,
+                column: state.column,
+            },
+            state,
+        ));
     }
 
     maximal(
@@ -130,208 +162,256 @@ pub fn token(mut source: &str) -> Result<(Token, &str), TokenizeError> {
             string,
             number,
         ],
-        source,
+        state.clone(),
     )
     .ok_or(TokenizeError::UnexpectedCharacter(
-        source.chars().next().unwrap(),
+        state.remaining.chars().next().unwrap(),
+        state.line,
+        state.column,
     ))
 }
 
 fn maximal<'a, T: std::fmt::Debug>(
-    parsers: &[fn(&str) -> Option<(T, &str)>],
-    source: &'a str,
-) -> Option<(T, &'a str)> {
-    let mut min_left = source.len() + 1;
+    parsers: &[fn(TokenizerState) -> Option<(T, TokenizerState)>],
+    state: TokenizerState<'a>,
+) -> Option<(T, TokenizerState<'a>)> {
+    let mut min_left = state.remaining.len() + 1;
     let mut max_match = None;
 
-    let matching_parsers = parsers.iter().filter_map(|parser| parser(source));
-    for (m, rest) in matching_parsers {
-        let left = rest.len();
+    let matching_parsers = parsers.iter().filter_map(|parser| parser(state.clone()));
+    for (m, next_state) in matching_parsers {
+        let left = next_state.remaining.len();
         if left < min_left {
             min_left = left;
-            max_match = Some((m, rest));
+            max_match = Some((m, next_state));
         }
     }
 
     max_match
 }
 
-fn whitespace(source: &str) -> Option<((), &str)> {
-    let len = source
-        .chars()
-        .take_while(|c| c.is_whitespace())
-        .map(char::len_utf8)
-        .sum();
+fn whitespace(mut state: TokenizerState) -> Option<((), TokenizerState)> {
+    let mut chars = state.remaining.chars();
+    let mut len = 0;
+    while let Some(c) = chars.next() {
+        if c.is_whitespace() {
+            len += c.len_utf8();
+            state.column += 1;
+            if c == '\n' {
+                state.line += 1;
+                state.column = 1;
+            }
+        } else {
+            break;
+        }
+    }
     if len > 0 {
-        Some(((), &source[len..]))
+        Some((
+            (),
+            TokenizerState {
+                remaining: &state.remaining[len..],
+                ..state
+            },
+        ))
     } else {
         None
     }
 }
 
-fn comment(source: &str) -> Option<((), &str)> {
-    if source.starts_with("//") {
-        let len = source
-            .chars()
-            .take_while(|c| *c != '\n')
-            .map(char::len_utf8)
-            .sum();
-        Some(((), &source[len..]))
+fn comment(mut state: TokenizerState) -> Option<((), TokenizerState)> {
+    if state.remaining.starts_with("//") {
+        let mut chars = state.remaining.chars();
+        while let Some(c) = chars.next() {
+            if c == '\n' {
+                return Some((
+                    (),
+                    TokenizerState {
+                        remaining: chars.as_str(),
+                        line: state.line + 1,
+                        column: 1,
+                    },
+                ));
+            } else {
+                state.column += 1;
+            }
+        }
+        return Some((
+            (),
+            TokenizerState {
+                remaining: chars.as_str(),
+                ..state
+            },
+        ));
     } else {
         None
     }
 }
 
-fn literal<'a>(source: &'a str, literal: &str, token: Token) -> Option<(Token, &'a str)> {
-    if source.starts_with(literal) {
-        Some((token.clone(), &source[literal.len()..]))
+fn literal<'a>(
+    state: TokenizerState<'a>,
+    literal: &str,
+    token_type: TokenType,
+) -> Option<(Token, TokenizerState<'a>)> {
+    if state.remaining.starts_with(literal) {
+        Some((
+            Token {
+                token_type,
+                line: state.line,
+                column: state.column,
+            },
+            TokenizerState {
+                remaining: &state.remaining[literal.len()..],
+                column: state.column + literal.len(),
+                ..state
+            },
+        ))
     } else {
         None
     }
 }
 
-fn left_paren(source: &str) -> Option<(Token, &str)> {
-    literal(source, "(", Token::LeftParen)
+fn left_paren(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "(", TokenType::LeftParen)
 }
 
-fn right_paren(source: &str) -> Option<(Token, &str)> {
-    literal(source, ")", Token::RightParen)
+fn right_paren(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, ")", TokenType::RightParen)
 }
 
-fn left_brace(source: &str) -> Option<(Token, &str)> {
-    literal(source, "{", Token::LeftBrace)
+fn left_brace(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "{", TokenType::LeftBrace)
 }
 
-fn right_brace(source: &str) -> Option<(Token, &str)> {
-    literal(source, "}", Token::RightBrace)
+fn right_brace(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "}", TokenType::RightBrace)
 }
 
-fn comma(source: &str) -> Option<(Token, &str)> {
-    literal(source, ",", Token::Comma)
+fn comma(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, ",", TokenType::Comma)
 }
 
-fn dot(source: &str) -> Option<(Token, &str)> {
-    literal(source, ".", Token::Dot)
+fn dot(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, ".", TokenType::Dot)
 }
 
-fn minus(source: &str) -> Option<(Token, &str)> {
-    literal(source, "-", Token::Minus)
+fn minus(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "-", TokenType::Minus)
 }
 
-fn plus(source: &str) -> Option<(Token, &str)> {
-    literal(source, "+", Token::Plus)
+fn plus(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "+", TokenType::Plus)
 }
 
-fn semicolon(source: &str) -> Option<(Token, &str)> {
-    literal(source, ";", Token::Semicolon)
+fn semicolon(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, ";", TokenType::Semicolon)
 }
 
-fn slash(source: &str) -> Option<(Token, &str)> {
-    literal(source, "/", Token::Slash)
+fn slash(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "/", TokenType::Slash)
 }
 
-fn star(source: &str) -> Option<(Token, &str)> {
-    literal(source, "*", Token::Star)
+fn star(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "*", TokenType::Star)
 }
 
-fn bang(source: &str) -> Option<(Token, &str)> {
-    literal(source, "!", Token::Bang)
+fn bang(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "!", TokenType::Bang)
 }
 
-fn bang_equal(source: &str) -> Option<(Token, &str)> {
-    literal(source, "!=", Token::BangEqual)
+fn bang_equal(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "!=", TokenType::BangEqual)
 }
 
-fn equal(source: &str) -> Option<(Token, &str)> {
-    literal(source, "=", Token::Equal)
+fn equal(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "=", TokenType::Equal)
 }
 
-fn equal_equal(source: &str) -> Option<(Token, &str)> {
-    literal(source, "==", Token::EqualEqual)
+fn equal_equal(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "==", TokenType::EqualEqual)
 }
 
-fn greater(source: &str) -> Option<(Token, &str)> {
-    literal(source, ">", Token::Greater)
+fn greater(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, ">", TokenType::Greater)
 }
 
-fn greater_equal(source: &str) -> Option<(Token, &str)> {
-    literal(source, ">=", Token::GreaterEqual)
+fn greater_equal(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, ">=", TokenType::GreaterEqual)
 }
 
-fn less(source: &str) -> Option<(Token, &str)> {
-    literal(source, "<", Token::Less)
+fn less(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "<", TokenType::Less)
 }
 
-fn less_equal(source: &str) -> Option<(Token, &str)> {
-    literal(source, "<=", Token::LessEqual)
+fn less_equal(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "<=", TokenType::LessEqual)
 }
 
-fn and(source: &str) -> Option<(Token, &str)> {
-    literal(source, "and", Token::And)
+fn and(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "and", TokenType::And)
 }
 
-fn class(source: &str) -> Option<(Token, &str)> {
-    literal(source, "class", Token::Class)
+fn class(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "class", TokenType::Class)
 }
 
-fn else_(source: &str) -> Option<(Token, &str)> {
-    literal(source, "else", Token::Else)
+fn else_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "else", TokenType::Else)
 }
 
-fn false_(source: &str) -> Option<(Token, &str)> {
-    literal(source, "false", Token::False)
+fn false_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "false", TokenType::False)
 }
 
-fn fun(source: &str) -> Option<(Token, &str)> {
-    literal(source, "fun", Token::Fun)
+fn fun(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "fun", TokenType::Fun)
 }
 
-fn for_(source: &str) -> Option<(Token, &str)> {
-    literal(source, "for", Token::For)
+fn for_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "for", TokenType::For)
 }
 
-fn if_(source: &str) -> Option<(Token, &str)> {
-    literal(source, "if", Token::If)
+fn if_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "if", TokenType::If)
 }
 
-fn nil(source: &str) -> Option<(Token, &str)> {
-    literal(source, "nil", Token::Nil)
+fn nil(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "nil", TokenType::Nil)
 }
 
-fn or(source: &str) -> Option<(Token, &str)> {
-    literal(source, "or", Token::Or)
+fn or(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "or", TokenType::Or)
 }
 
-fn print_(source: &str) -> Option<(Token, &str)> {
-    literal(source, "print", Token::Print)
+fn print_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "print", TokenType::Print)
 }
 
-fn return_(source: &str) -> Option<(Token, &str)> {
-    literal(source, "return", Token::Return)
+fn return_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "return", TokenType::Return)
 }
 
-fn super_(source: &str) -> Option<(Token, &str)> {
-    literal(source, "super", Token::Super)
+fn super_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "super", TokenType::Super)
 }
 
-fn this(source: &str) -> Option<(Token, &str)> {
-    literal(source, "this", Token::This)
+fn this(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "this", TokenType::This)
 }
 
-fn true_(source: &str) -> Option<(Token, &str)> {
-    literal(source, "true", Token::True)
+fn true_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "true", TokenType::True)
 }
 
-fn var(source: &str) -> Option<(Token, &str)> {
-    literal(source, "var", Token::Var)
+fn var(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "var", TokenType::Var)
 }
 
-fn while_(source: &str) -> Option<(Token, &str)> {
-    literal(source, "while", Token::While)
+fn while_(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    literal(state, "while", TokenType::While)
 }
 
-fn identifier(source: &str) -> Option<(Token, &str)> {
-    let mut chars = source.chars();
+fn identifier(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    let mut chars = state.remaining.chars();
 
     let first = chars.next()?;
     if !first.is_ascii_alphabetic() && first != '_' {
@@ -345,26 +425,45 @@ fn identifier(source: &str) -> Option<(Token, &str)> {
             .sum::<usize>();
 
     if len > 0 {
-        Some((Token::Identifier(source[..len].to_string()), &source[len..]))
+        Some((
+            Token {
+                token_type: TokenType::Identifier(state.remaining[..len].to_string()),
+                line: state.line,
+                column: state.column,
+            },
+            TokenizerState {
+                remaining: &state.remaining[len..],
+                column: state.column + len,
+                ..state
+            },
+        ))
     } else {
         None
     }
 }
 
-fn string(source: &str) -> Option<(Token, &str)> {
-    if !source.starts_with('"') {
+fn string(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    if !state.remaining.starts_with('"') {
         return None;
     }
 
-    let mut chars = source.chars().skip(1);
+    let mut chars = state.remaining.chars().skip(1);
     let mut len = 1;
     while let Some(c) = chars.next() {
         len += c.len_utf8();
         match c {
             '"' => {
                 return Some((
-                    Token::String(source[1..len - 1].to_string()),
-                    &source[len..],
+                    Token {
+                        token_type: TokenType::String(state.remaining[1..len - 1].to_string()),
+                        line: state.line,
+                        column: state.column,
+                    },
+                    TokenizerState {
+                        remaining: &state.remaining[len..],
+                        column: state.column + len,
+                        ..state
+                    },
                 ))
             }
             _ => {}
@@ -373,8 +472,8 @@ fn string(source: &str) -> Option<(Token, &str)> {
     None
 }
 
-fn number(source: &str) -> Option<(Token, &str)> {
-    let mut chars = source.chars().peekable();
+fn number(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+    let mut chars = state.remaining.chars().peekable();
     let first = chars.next()?;
     if !first.is_ascii_digit() && first != '.' {
         return None;
@@ -410,8 +509,16 @@ fn number(source: &str) -> Option<(Token, &str)> {
     }
 
     Some((
-        Token::Number(source[..len].parse().unwrap()),
-        &source[len..],
+        Token {
+            token_type: TokenType::Number(state.remaining[..len].parse().unwrap()),
+            line: state.line,
+            column: state.column,
+        },
+        TokenizerState {
+            remaining: &state.remaining[len..],
+            column: state.column + len,
+            ..state
+        },
     ))
 }
 
@@ -420,15 +527,57 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_literal() {
+        let source = "var";
+        let expected = vec![
+            Token {
+                token_type: TokenType::Var,
+                line: 1,
+                column: 1,
+            },
+            Token {
+                token_type: TokenType::Eof,
+                line: 1,
+                column: 4,
+            },
+        ];
+        assert_eq!(tokens(source).unwrap(), expected);
+    }
+
+    #[test]
     fn test_tokens() {
         let source = "var x = 1;";
         let expected = vec![
-            Token::Var,
-            Token::Identifier("x".to_string()),
-            Token::Equal,
-            Token::Number(1.0),
-            Token::Semicolon,
-            Token::Eof,
+            Token {
+                token_type: TokenType::Var,
+                line: 1,
+                column: 1,
+            },
+            Token {
+                token_type: TokenType::Identifier("x".to_string()),
+                line: 1,
+                column: 5,
+            },
+            Token {
+                token_type: TokenType::Equal,
+                line: 1,
+                column: 7,
+            },
+            Token {
+                token_type: TokenType::Number(1.0),
+                line: 1,
+                column: 9,
+            },
+            Token {
+                token_type: TokenType::Semicolon,
+                line: 1,
+                column: 10,
+            },
+            Token {
+                token_type: TokenType::Eof,
+                line: 1,
+                column: 11,
+            },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
     }
@@ -437,12 +586,36 @@ mod test {
     fn test_tokens_with_comments() {
         let source = "var x = 1; // comment";
         let expected = vec![
-            Token::Var,
-            Token::Identifier("x".to_string()),
-            Token::Equal,
-            Token::Number(1.0),
-            Token::Semicolon,
-            Token::Eof,
+            Token {
+                token_type: TokenType::Var,
+                line: 1,
+                column: 1,
+            },
+            Token {
+                token_type: TokenType::Identifier("x".to_string()),
+                line: 1,
+                column: 5,
+            },
+            Token {
+                token_type: TokenType::Equal,
+                line: 1,
+                column: 7,
+            },
+            Token {
+                token_type: TokenType::Number(1.0),
+                line: 1,
+                column: 9,
+            },
+            Token {
+                token_type: TokenType::Semicolon,
+                line: 1,
+                column: 10,
+            },
+            Token {
+                token_type: TokenType::Eof,
+                line: 1,
+                column: 22,
+            },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
     }
@@ -451,12 +624,36 @@ mod test {
     fn test_tokens_with_whitespace() {
         let source = "var x = 1; ";
         let expected = vec![
-            Token::Var,
-            Token::Identifier("x".to_string()),
-            Token::Equal,
-            Token::Number(1.0),
-            Token::Semicolon,
-            Token::Eof,
+            Token {
+                token_type: TokenType::Var,
+                line: 1,
+                column: 1,
+            },
+            Token {
+                token_type: TokenType::Identifier("x".to_string()),
+                line: 1,
+                column: 5,
+            },
+            Token {
+                token_type: TokenType::Equal,
+                line: 1,
+                column: 7,
+            },
+            Token {
+                token_type: TokenType::Number(1.0),
+                line: 1,
+                column: 9,
+            },
+            Token {
+                token_type: TokenType::Semicolon,
+                line: 1,
+                column: 10,
+            },
+            Token {
+                token_type: TokenType::Eof,
+                line: 1,
+                column: 12,
+            },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
     }
@@ -465,12 +662,36 @@ mod test {
     fn test_tokens_with_string() {
         let source = "var x = \"hello\";";
         let expected = vec![
-            Token::Var,
-            Token::Identifier("x".to_string()),
-            Token::Equal,
-            Token::String("hello".to_string()),
-            Token::Semicolon,
-            Token::Eof,
+            Token {
+                token_type: TokenType::Var,
+                line: 1,
+                column: 1,
+            },
+            Token {
+                token_type: TokenType::Identifier("x".to_string()),
+                line: 1,
+                column: 5,
+            },
+            Token {
+                token_type: TokenType::Equal,
+                line: 1,
+                column: 7,
+            },
+            Token {
+                token_type: TokenType::String("hello".to_string()),
+                line: 1,
+                column: 9,
+            },
+            Token {
+                token_type: TokenType::Semicolon,
+                line: 1,
+                column: 16,
+            },
+            Token {
+                token_type: TokenType::Eof,
+                line: 1,
+                column: 17,
+            },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
     }
@@ -479,12 +700,36 @@ mod test {
     fn test_tokens_with_number() {
         let source = "var x = 1.0;";
         let expected = vec![
-            Token::Var,
-            Token::Identifier("x".to_string()),
-            Token::Equal,
-            Token::Number(1.0),
-            Token::Semicolon,
-            Token::Eof,
+            Token {
+                token_type: TokenType::Var,
+                line: 1,
+                column: 1,
+            },
+            Token {
+                token_type: TokenType::Identifier("x".to_string()),
+                line: 1,
+                column: 5,
+            },
+            Token {
+                token_type: TokenType::Equal,
+                line: 1,
+                column: 7,
+            },
+            Token {
+                token_type: TokenType::Number(1.0),
+                line: 1,
+                column: 9,
+            },
+            Token {
+                token_type: TokenType::Semicolon,
+                line: 1,
+                column: 12,
+            },
+            Token {
+                token_type: TokenType::Eof,
+                line: 1,
+                column: 13,
+            },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
     }
@@ -493,12 +738,36 @@ mod test {
     fn test_tokens_with_keywords() {
         let source = "var x = true;";
         let expected = vec![
-            Token::Var,
-            Token::Identifier("x".to_string()),
-            Token::Equal,
-            Token::True,
-            Token::Semicolon,
-            Token::Eof,
+            Token {
+                token_type: TokenType::Var,
+                line: 1,
+                column: 1,
+            },
+            Token {
+                token_type: TokenType::Identifier("x".to_string()),
+                line: 1,
+                column: 5,
+            },
+            Token {
+                token_type: TokenType::Equal,
+                line: 1,
+                column: 7,
+            },
+            Token {
+                token_type: TokenType::True,
+                line: 1,
+                column: 9,
+            },
+            Token {
+                token_type: TokenType::Semicolon,
+                line: 1,
+                column: 13,
+            },
+            Token {
+                token_type: TokenType::Eof,
+                line: 1,
+                column: 14,
+            },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
     }
@@ -507,11 +776,36 @@ mod test {
     fn test_double_equal() {
         let source = "a==b";
         let expected = vec![
-            Token::Identifier("a".to_string()),
-            Token::EqualEqual,
-            Token::Identifier("b".to_string()),
-            Token::Eof,
+            Token {
+                token_type: TokenType::Identifier("a".to_string()),
+                line: 1,
+                column: 1,
+            },
+            Token {
+                token_type: TokenType::EqualEqual,
+                line: 1,
+                column: 2,
+            },
+            Token {
+                token_type: TokenType::Identifier("b".to_string()),
+                line: 1,
+                column: 4,
+            },
+            Token {
+                token_type: TokenType::Eof,
+                line: 1,
+                column: 5,
+            },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_invalid_token() {
+        let source = "a@b";
+        assert!(matches!(
+            tokens(source),
+            Err(TokenizeError::UnexpectedCharacter('@', 1, 2))
+        ));
     }
 }
