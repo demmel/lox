@@ -98,7 +98,7 @@ fn var_declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError
 
     let (expr, rest) = match tokens.get(1).map(Token::token_type) {
         Some(TokenType::Equal) => expression(&tokens[2..])?,
-        _ => (Expression::Literal(Literal::Nil), tokens),
+        _ => (Expression::Literal(Literal::Nil), &tokens[1..]),
     };
 
     match rest.first().map(Token::token_type) {
