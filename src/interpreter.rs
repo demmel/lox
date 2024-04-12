@@ -4,7 +4,7 @@ use justerror::Error;
 
 use crate::{
     ast::{Expression, InfixOperator, Literal, Statement, UnaryOperator},
-    parser::{program, ParseError},
+    parser::{program, ParseErrors},
     tokenizer::{tokens, TokenizeError},
 };
 
@@ -42,7 +42,7 @@ impl Default for Interpreter {
 #[Error]
 pub enum InterpretError {
     Tokenize(#[from] TokenizeError),
-    Parse(#[from] ParseError),
+    Parse(#[from] ParseErrors),
     InvalidLess(Value, Value),
     InvalidLessEqual(Value, Value),
     InvalidGreater(Value, Value),
