@@ -6,7 +6,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct ParseErrors(Vec<ParseError>);
+pub struct ParseErrors(Vec<ParseErrorWithContext>);
 
 impl std::error::Error for ParseErrors {}
 
@@ -16,6 +16,18 @@ impl std::fmt::Display for ParseErrors {
             writeln!(f, "{}", error)?;
         }
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct ParseErrorWithContext {
+    pub error: ParseError,
+    pub token: Option<Token>,
+}
+
+impl std::fmt::Display for ParseErrorWithContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} at {:?}", self.error, self.token)
     }
 }
 
@@ -53,7 +65,10 @@ pub fn program(tokens: &[Token]) -> Result<Program, ParseErrors> {
     }
 
     if tokens.len() == 0 || tokens.len() > 1 || tokens[0].token_type() != &TokenType::Eof {
-        errors.push(ParseError::ExpectedEof);
+        errors.push(ParseErrorWithContext {
+            error: ParseError::ExpectedEof,
+            token: tokens.first().cloned(),
+        });
     }
 
     if !errors.is_empty() {
@@ -63,17 +78,22 @@ pub fn program(tokens: &[Token]) -> Result<Program, ParseErrors> {
     Ok(Program(statments))
 }
 
-fn declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError> {
+fn declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
     match tokens.first().map(Token::token_type) {
         Some(TokenType::Var) => var_declaration(&tokens[1..]),
         _ => statement(tokens),
     }
 }
 
-fn var_declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError> {
+fn var_declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
     let name = match tokens.first().map(Token::token_type) {
         Some(TokenType::Identifier(name)) => name.clone(),
-        _ => return Err(ParseError::ExpectedIdentifier),
+        _ => {
+            return Err(ParseErrorWithContext {
+                error: ParseError::ExpectedIdentifier,
+                token: tokens.first().cloned(),
+            })
+        }
     };
 
     let (expr, rest) = match tokens.get(1).map(Token::token_type) {
@@ -83,42 +103,51 @@ fn var_declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError
 
     match rest.first().map(Token::token_type) {
         Some(TokenType::Semicolon) => Ok((Statement::VarDeclaration(name, expr), &rest[1..])),
-        _ => Err(ParseError::ExpectedSemicolon),
+        _ => Err(ParseErrorWithContext {
+            error: ParseError::ExpectedSemicolon,
+            token: tokens.first().cloned(),
+        }),
     }
 }
 
-fn statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError> {
+fn statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
     match tokens.first().map(Token::token_type) {
         Some(TokenType::Print) => print_statement(&tokens[1..]),
         _ => expression_statement(tokens),
     }
 }
 
-fn expression_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError> {
+fn expression_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
     let (expr, rest) = expression(tokens)?;
     match rest.first().map(Token::token_type) {
         Some(TokenType::Semicolon) => Ok((Statement::Expression(expr), &rest[1..])),
-        _ => Err(ParseError::ExpectedSemicolon),
+        _ => Err(ParseErrorWithContext {
+            error: ParseError::ExpectedSemicolon,
+            token: tokens.first().cloned(),
+        }),
     }
 }
 
-fn print_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError> {
+fn print_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
     let (expr, rest) = expression(tokens)?;
     match rest.first().map(Token::token_type) {
         Some(TokenType::Semicolon) => Ok((Statement::Print(expr), &rest[1..])),
-        _ => Err(ParseError::ExpectedSemicolon),
+        _ => Err(ParseErrorWithContext {
+            error: ParseError::ExpectedSemicolon,
+            token: tokens.first().cloned(),
+        }),
     }
 }
 
-pub fn expression(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
+pub fn expression(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
     equality(tokens)
 }
 
 fn binary(
-    precedence: impl Fn(&[Token]) -> Result<(Expression, &[Token]), ParseError>,
+    precedence: impl Fn(&[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext>,
     operator: impl Fn(&Token) -> Option<InfixOperator>,
     tokens: &[Token],
-) -> Result<(Expression, &[Token]), ParseError> {
+) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
     let (mut expr, mut tokens) = precedence(tokens)?;
 
     while let Some(token) = tokens.first() {
@@ -135,7 +164,7 @@ fn binary(
     Ok((expr, tokens))
 }
 
-fn equality(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
+fn equality(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
     binary(
         comparison,
         |token| match token.token_type() {
@@ -147,7 +176,7 @@ fn equality(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
     )
 }
 
-fn comparison(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
+fn comparison(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
     binary(
         term,
         |token| match token.token_type() {
@@ -161,7 +190,7 @@ fn comparison(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
     )
 }
 
-fn term(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
+fn term(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
     binary(
         factor,
         |token| match token.token_type() {
@@ -173,7 +202,7 @@ fn term(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
     )
 }
 
-fn factor(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
+fn factor(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
     binary(
         unary,
         |token| match token.token_type() {
@@ -185,7 +214,7 @@ fn factor(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
     )
 }
 
-fn unary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
+fn unary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
     let operator = match tokens.first().map(Token::token_type) {
         Some(TokenType::Minus) => UnaryOperator::Negate,
         Some(TokenType::Bang) => UnaryOperator::Not,
@@ -196,9 +225,12 @@ fn unary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
     Ok((Expression::Unary(operator, Box::new(right)), rest))
 }
 
-fn primary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
+fn primary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
     let Some(token) = tokens.first() else {
-        return Err(ParseError::ExpectedExpression);
+        return Err(ParseErrorWithContext {
+            error: ParseError::ExpectedExpression,
+            token: tokens.first().cloned(),
+        });
     };
 
     match token.token_type() {
@@ -216,10 +248,16 @@ fn primary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError> {
                 Some(TokenType::RightParen) => {
                     Ok((Expression::Grouping(Box::new(expr)), &rest[1..]))
                 }
-                _ => Err(ParseError::ExpectedExpression),
+                _ => Err(ParseErrorWithContext {
+                    error: ParseError::ExpectedExpression,
+                    token: tokens.first().cloned(),
+                }),
             }
         }
         TokenType::Identifier(name) => Ok((Expression::Identifier(name.clone()), &tokens[1..])),
-        _ => Err(ParseError::ExpectedExpression),
+        _ => Err(ParseErrorWithContext {
+            error: ParseError::ExpectedExpression,
+            token: tokens.first().cloned(),
+        }),
     }
 }

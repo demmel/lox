@@ -54,7 +54,7 @@ pub enum TokenType {
 
 impl Eq for TokenType {}
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     token_type: TokenType,
     line: usize,
