@@ -73,8 +73,14 @@ fn repl_command() -> Result<(), ReplCommandError> {
         }
 
         let trimmed_input = input.trim();
-        let value = interpreter.interpret(&trimmed_input)?;
-        println!("{}", value);
+        match interpreter.interpret(&trimmed_input) {
+            Ok(value) => {
+                println!("{}", value);
+            }
+            Err(e) => {
+                println!("Error: {}", e)
+            }
+        }
 
         input.clear()
     }
