@@ -55,15 +55,26 @@ pub enum TokenType {
 impl Eq for TokenType {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    pub start_line: usize,
+    pub start_column: usize,
+    pub end_line: usize,
+    pub end_column: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
-    token_type: TokenType,
-    line: usize,
-    column: usize,
+    pub token_type: TokenType,
+    pub span: Span,
 }
 
 impl Token {
     pub fn token_type(&self) -> &TokenType {
         &self.token_type
+    }
+
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 }
 
@@ -110,8 +121,12 @@ fn token(mut state: TokenizerState) -> Result<(Token, TokenizerState), TokenizeE
         return Ok((
             Token {
                 token_type: TokenType::Eof,
-                line: state.line,
-                column: state.column,
+                span: Span {
+                    start_line: state.line,
+                    start_column: state.column,
+                    end_line: state.line,
+                    end_column: state.column,
+                },
             },
             state,
         ));
@@ -256,8 +271,12 @@ fn literal<'a>(
         Some((
             Token {
                 token_type,
-                line: state.line,
-                column: state.column,
+                span: Span {
+                    start_line: state.line,
+                    start_column: state.column,
+                    end_line: state.line,
+                    end_column: state.column + literal.len(),
+                },
             },
             TokenizerState {
                 remaining: &state.remaining[literal.len()..],
@@ -428,8 +447,12 @@ fn identifier(state: TokenizerState) -> Option<(Token, TokenizerState)> {
         Some((
             Token {
                 token_type: TokenType::Identifier(state.remaining[..len].to_string()),
-                line: state.line,
-                column: state.column,
+                span: Span {
+                    start_line: state.line,
+                    start_column: state.column,
+                    end_line: state.line,
+                    end_column: state.column + len,
+                },
             },
             TokenizerState {
                 remaining: &state.remaining[len..],
@@ -456,8 +479,12 @@ fn string(state: TokenizerState) -> Option<(Token, TokenizerState)> {
                 return Some((
                     Token {
                         token_type: TokenType::String(state.remaining[1..len - 1].to_string()),
-                        line: state.line,
-                        column: state.column,
+                        span: Span {
+                            start_line: state.line,
+                            start_column: state.column,
+                            end_line: state.line,
+                            end_column: state.column + len,
+                        },
                     },
                     TokenizerState {
                         remaining: &state.remaining[len..],
@@ -511,8 +538,12 @@ fn number(state: TokenizerState) -> Option<(Token, TokenizerState)> {
     Some((
         Token {
             token_type: TokenType::Number(state.remaining[..len].parse().unwrap()),
-            line: state.line,
-            column: state.column,
+            span: Span {
+                start_line: state.line,
+                start_column: state.column,
+                end_line: state.line,
+                end_column: state.column + len,
+            },
         },
         TokenizerState {
             remaining: &state.remaining[len..],
@@ -527,56 +558,62 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_literal() {
-        let source = "var";
-        let expected = vec![
-            Token {
-                token_type: TokenType::Var,
-                line: 1,
-                column: 1,
-            },
-            Token {
-                token_type: TokenType::Eof,
-                line: 1,
-                column: 4,
-            },
-        ];
-        assert_eq!(tokens(source).unwrap(), expected);
-    }
-
-    #[test]
     fn test_tokens() {
         let source = "var x = 1;";
         let expected = vec![
             Token {
                 token_type: TokenType::Var,
-                line: 1,
-                column: 1,
+                span: Span {
+                    start_line: 1,
+                    start_column: 1,
+                    end_line: 1,
+                    end_column: 4,
+                },
             },
             Token {
                 token_type: TokenType::Identifier("x".to_string()),
-                line: 1,
-                column: 5,
+                span: Span {
+                    start_line: 1,
+                    start_column: 5,
+                    end_line: 1,
+                    end_column: 6,
+                },
             },
             Token {
                 token_type: TokenType::Equal,
-                line: 1,
-                column: 7,
+                span: Span {
+                    start_line: 1,
+                    start_column: 7,
+                    end_line: 1,
+                    end_column: 8,
+                },
             },
             Token {
                 token_type: TokenType::Number(1.0),
-                line: 1,
-                column: 9,
+                span: Span {
+                    start_line: 1,
+                    start_column: 9,
+                    end_line: 1,
+                    end_column: 10,
+                },
             },
             Token {
                 token_type: TokenType::Semicolon,
-                line: 1,
-                column: 10,
+                span: Span {
+                    start_line: 1,
+                    start_column: 10,
+                    end_line: 1,
+                    end_column: 11,
+                },
             },
             Token {
                 token_type: TokenType::Eof,
-                line: 1,
-                column: 11,
+                span: Span {
+                    start_line: 1,
+                    start_column: 11,
+                    end_line: 1,
+                    end_column: 11,
+                },
             },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
@@ -588,33 +625,57 @@ mod test {
         let expected = vec![
             Token {
                 token_type: TokenType::Var,
-                line: 1,
-                column: 1,
+                span: Span {
+                    start_line: 1,
+                    start_column: 1,
+                    end_line: 1,
+                    end_column: 4,
+                },
             },
             Token {
                 token_type: TokenType::Identifier("x".to_string()),
-                line: 1,
-                column: 5,
+                span: Span {
+                    start_line: 1,
+                    start_column: 5,
+                    end_line: 1,
+                    end_column: 6,
+                },
             },
             Token {
                 token_type: TokenType::Equal,
-                line: 1,
-                column: 7,
+                span: Span {
+                    start_line: 1,
+                    start_column: 7,
+                    end_line: 1,
+                    end_column: 8,
+                },
             },
             Token {
                 token_type: TokenType::Number(1.0),
-                line: 1,
-                column: 9,
+                span: Span {
+                    start_line: 1,
+                    start_column: 9,
+                    end_line: 1,
+                    end_column: 10,
+                },
             },
             Token {
                 token_type: TokenType::Semicolon,
-                line: 1,
-                column: 10,
+                span: Span {
+                    start_line: 1,
+                    start_column: 10,
+                    end_line: 1,
+                    end_column: 11,
+                },
             },
             Token {
                 token_type: TokenType::Eof,
-                line: 1,
-                column: 22,
+                span: Span {
+                    start_line: 1,
+                    start_column: 22,
+                    end_line: 1,
+                    end_column: 22,
+                },
             },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
@@ -626,33 +687,57 @@ mod test {
         let expected = vec![
             Token {
                 token_type: TokenType::Var,
-                line: 1,
-                column: 1,
+                span: Span {
+                    start_line: 1,
+                    start_column: 1,
+                    end_line: 1,
+                    end_column: 4,
+                },
             },
             Token {
                 token_type: TokenType::Identifier("x".to_string()),
-                line: 1,
-                column: 5,
+                span: Span {
+                    start_line: 1,
+                    start_column: 5,
+                    end_line: 1,
+                    end_column: 6,
+                },
             },
             Token {
                 token_type: TokenType::Equal,
-                line: 1,
-                column: 7,
+                span: Span {
+                    start_line: 1,
+                    start_column: 7,
+                    end_line: 1,
+                    end_column: 8,
+                },
             },
             Token {
                 token_type: TokenType::Number(1.0),
-                line: 1,
-                column: 9,
+                span: Span {
+                    start_line: 1,
+                    start_column: 9,
+                    end_line: 1,
+                    end_column: 10,
+                },
             },
             Token {
                 token_type: TokenType::Semicolon,
-                line: 1,
-                column: 10,
+                span: Span {
+                    start_line: 1,
+                    start_column: 10,
+                    end_line: 1,
+                    end_column: 11,
+                },
             },
             Token {
                 token_type: TokenType::Eof,
-                line: 1,
-                column: 12,
+                span: Span {
+                    start_line: 1,
+                    start_column: 12,
+                    end_line: 1,
+                    end_column: 12,
+                },
             },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
@@ -664,33 +749,57 @@ mod test {
         let expected = vec![
             Token {
                 token_type: TokenType::Var,
-                line: 1,
-                column: 1,
+                span: Span {
+                    start_line: 1,
+                    start_column: 1,
+                    end_line: 1,
+                    end_column: 4,
+                },
             },
             Token {
                 token_type: TokenType::Identifier("x".to_string()),
-                line: 1,
-                column: 5,
+                span: Span {
+                    start_line: 1,
+                    start_column: 5,
+                    end_line: 1,
+                    end_column: 6,
+                },
             },
             Token {
                 token_type: TokenType::Equal,
-                line: 1,
-                column: 7,
+                span: Span {
+                    start_line: 1,
+                    start_column: 7,
+                    end_line: 1,
+                    end_column: 8,
+                },
             },
             Token {
                 token_type: TokenType::String("hello".to_string()),
-                line: 1,
-                column: 9,
+                span: Span {
+                    start_line: 1,
+                    start_column: 9,
+                    end_line: 1,
+                    end_column: 16,
+                },
             },
             Token {
                 token_type: TokenType::Semicolon,
-                line: 1,
-                column: 16,
+                span: Span {
+                    start_line: 1,
+                    start_column: 16,
+                    end_line: 1,
+                    end_column: 17,
+                },
             },
             Token {
                 token_type: TokenType::Eof,
-                line: 1,
-                column: 17,
+                span: Span {
+                    start_line: 1,
+                    start_column: 17,
+                    end_line: 1,
+                    end_column: 17,
+                },
             },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
@@ -702,33 +811,57 @@ mod test {
         let expected = vec![
             Token {
                 token_type: TokenType::Var,
-                line: 1,
-                column: 1,
+                span: Span {
+                    start_line: 1,
+                    start_column: 1,
+                    end_line: 1,
+                    end_column: 4,
+                },
             },
             Token {
                 token_type: TokenType::Identifier("x".to_string()),
-                line: 1,
-                column: 5,
+                span: Span {
+                    start_line: 1,
+                    start_column: 5,
+                    end_line: 1,
+                    end_column: 6,
+                },
             },
             Token {
                 token_type: TokenType::Equal,
-                line: 1,
-                column: 7,
+                span: Span {
+                    start_line: 1,
+                    start_column: 7,
+                    end_line: 1,
+                    end_column: 8,
+                },
             },
             Token {
                 token_type: TokenType::Number(1.0),
-                line: 1,
-                column: 9,
+                span: Span {
+                    start_line: 1,
+                    start_column: 9,
+                    end_line: 1,
+                    end_column: 12,
+                },
             },
             Token {
                 token_type: TokenType::Semicolon,
-                line: 1,
-                column: 12,
+                span: Span {
+                    start_line: 1,
+                    start_column: 12,
+                    end_line: 1,
+                    end_column: 13,
+                },
             },
             Token {
                 token_type: TokenType::Eof,
-                line: 1,
-                column: 13,
+                span: Span {
+                    start_line: 1,
+                    start_column: 13,
+                    end_line: 1,
+                    end_column: 13,
+                },
             },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
@@ -740,33 +873,57 @@ mod test {
         let expected = vec![
             Token {
                 token_type: TokenType::Var,
-                line: 1,
-                column: 1,
+                span: Span {
+                    start_line: 1,
+                    start_column: 1,
+                    end_line: 1,
+                    end_column: 4,
+                },
             },
             Token {
                 token_type: TokenType::Identifier("x".to_string()),
-                line: 1,
-                column: 5,
+                span: Span {
+                    start_line: 1,
+                    start_column: 5,
+                    end_line: 1,
+                    end_column: 6,
+                },
             },
             Token {
                 token_type: TokenType::Equal,
-                line: 1,
-                column: 7,
+                span: Span {
+                    start_line: 1,
+                    start_column: 7,
+                    end_line: 1,
+                    end_column: 8,
+                },
             },
             Token {
                 token_type: TokenType::True,
-                line: 1,
-                column: 9,
+                span: Span {
+                    start_line: 1,
+                    start_column: 9,
+                    end_line: 1,
+                    end_column: 13,
+                },
             },
             Token {
                 token_type: TokenType::Semicolon,
-                line: 1,
-                column: 13,
+                span: Span {
+                    start_line: 1,
+                    start_column: 13,
+                    end_line: 1,
+                    end_column: 14,
+                },
             },
             Token {
                 token_type: TokenType::Eof,
-                line: 1,
-                column: 14,
+                span: Span {
+                    start_line: 1,
+                    start_column: 14,
+                    end_line: 1,
+                    end_column: 14,
+                },
             },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
@@ -778,23 +935,39 @@ mod test {
         let expected = vec![
             Token {
                 token_type: TokenType::Identifier("a".to_string()),
-                line: 1,
-                column: 1,
+                span: Span {
+                    start_line: 1,
+                    start_column: 1,
+                    end_line: 1,
+                    end_column: 2,
+                },
             },
             Token {
                 token_type: TokenType::EqualEqual,
-                line: 1,
-                column: 2,
+                span: Span {
+                    start_line: 1,
+                    start_column: 2,
+                    end_line: 1,
+                    end_column: 4,
+                },
             },
             Token {
                 token_type: TokenType::Identifier("b".to_string()),
-                line: 1,
-                column: 4,
+                span: Span {
+                    start_line: 1,
+                    start_column: 4,
+                    end_line: 1,
+                    end_column: 5,
+                },
             },
             Token {
                 token_type: TokenType::Eof,
-                line: 1,
-                column: 5,
+                span: Span {
+                    start_line: 1,
+                    start_column: 5,
+                    end_line: 1,
+                    end_column: 5,
+                },
             },
         ];
         assert_eq!(tokens(source).unwrap(), expected);
