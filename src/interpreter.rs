@@ -62,7 +62,7 @@ impl Interpreter {
     }
 
     pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
-        let tokens = &tokens(source)?[..];
+        let tokens = tokens(source)?;
         let program = program(&tokens)?;
 
         for stmt in program.0.iter() {
