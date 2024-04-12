@@ -1,11 +1,8 @@
 use std::{collections::HashMap, fmt::Display};
 
-use justerror::Error;
-
 use crate::{
     ast::{Expression, InfixOperator, Literal, Statement, UnaryOperator},
-    parser::{program, ParseErrors},
-    tokenizer::{tokens, TokenizeError},
+    parser, tokenizer,
 };
 
 #[derive(Debug, Clone)]
@@ -39,10 +36,10 @@ impl Default for Interpreter {
     }
 }
 
-#[Error]
+#[justerror::Error]
 pub enum InterpretError {
-    Tokenize(#[from] TokenizeError),
-    Parse(#[from] ParseErrors),
+    Tokenize(#[from] tokenizer::TokenizeError),
+    Parse(#[from] parser::ParseErrors),
     InvalidLess(Value, Value),
     InvalidLessEqual(Value, Value),
     InvalidGreater(Value, Value),
@@ -62,8 +59,8 @@ impl Interpreter {
     }
 
     pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
-        let tokens = tokens(source)?;
-        let program = program(&tokens)?;
+        let tokens = tokenizer::tokens(source)?;
+        let program = parser::program(&tokens)?;
 
         for stmt in program.0.iter() {
             self.execute(stmt)?;

@@ -1,5 +1,3 @@
-use justerror::Error;
-
 use crate::{
     ast::{Expression, InfixOperator, Literal, Program, Statement, UnaryOperator},
     tokenizer::{Token, TokenType},
@@ -31,7 +29,7 @@ impl std::fmt::Display for ParseErrorWithContext {
     }
 }
 
-#[Error]
+#[justerror::Error]
 pub enum ParseError {
     ExpectedIdentifier,
     ExpectedExpression,

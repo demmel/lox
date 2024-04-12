@@ -1,5 +1,3 @@
-use justerror::Error;
-
 use crate::span::Span;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,7 +66,7 @@ impl Token {
     }
 }
 
-#[Error]
+#[justerror::Error]
 pub enum TokenizeError {
     #[error(desc = "Unexpected character {0} at line {1}, column {2}")]
     UnexpectedCharacter(char, usize, usize),
