@@ -10,6 +10,7 @@ impl std::error::Error for ParseErrors {}
 
 impl std::fmt::Display for ParseErrors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Found {} errors during parsing", self.0.len())?;
         for error in &self.0 {
             writeln!(f, "{}", error)?;
         }
@@ -31,18 +32,27 @@ pub struct ParseErrorWithContext {
 
 impl std::fmt::Display for ParseErrorWithContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} at {:?}", self.error, self.token)
+        write!(f, "{}", self.error)?;
+        if let Some(token) = &self.token {
+            write!(
+                f,
+                " at {},{} but found \"{}\"",
+                token.span.start_line, token.span.start_column, token.token_type
+            )?;
+        }
+        Ok(())
     }
 }
 
-#[justerror::Error]
+#[derive(Debug, thiserror::Error)]
 pub enum ParseError {
-    #[error(desc = "Expected {:?}", fmt = debug)]
+    #[error("Expected \"{0}\"")]
     Expected(TokenType),
-    #[error(desc = "Expected one of {:?}", fmt = debug)]
+    #[error("Expected one of {0:?}")]
     ExpectedOneOf(Vec<TokenType>),
-    #[error(desc = "Unexpected {:?}", fmt = debug)]
+    #[error("Unexpected \"{0}\"")]
     Unexpected(TokenType),
+    #[error("Unexpected identifier")]
     ExpectedIdentifier,
 }
 

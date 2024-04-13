@@ -54,6 +54,53 @@ pub enum TokenType {
 
 impl Eq for TokenType {}
 
+impl std::fmt::Display for TokenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let repr = match self {
+            TokenType::LeftParen => "(",
+            TokenType::RightParen => ")",
+            TokenType::LeftBrace => "{",
+            TokenType::RightBrace => "}",
+            TokenType::Comma => ",",
+            TokenType::Dot => ".",
+            TokenType::Minus => "-",
+            TokenType::Plus => "+",
+            TokenType::Semicolon => ";",
+            TokenType::Slash => "/",
+            TokenType::Star => "*",
+            TokenType::Bang => "!",
+            TokenType::BangEqual => "!=",
+            TokenType::Equal => "=",
+            TokenType::EqualEqual => "==",
+            TokenType::Greater => ">",
+            TokenType::GreaterEqual => ">=",
+            TokenType::Less => "<",
+            TokenType::LessEqual => "<=",
+            TokenType::Identifier(id) => return write!(f, "{id}"),
+            TokenType::String(s) => return write!(f, "\'{s}\""),
+            TokenType::Number(n) => return write!(f, "{n}"),
+            TokenType::And => "and",
+            TokenType::Class => "class",
+            TokenType::Else => "else",
+            TokenType::False => "false",
+            TokenType::Fun => "fun",
+            TokenType::For => "for",
+            TokenType::If => "if",
+            TokenType::Nil => "nil",
+            TokenType::Or => "or",
+            TokenType::Print => "print",
+            TokenType::Return => "return",
+            TokenType::Super => "super",
+            TokenType::This => "this",
+            TokenType::True => "true",
+            TokenType::Var => "var",
+            TokenType::While => "while",
+            TokenType::Eof => "",
+        };
+        write!(f, "{repr}")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub token_type: TokenType,

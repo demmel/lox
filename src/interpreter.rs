@@ -134,11 +134,13 @@ pub struct Interpreter {
     stack: Stack,
 }
 
-#[justerror::Error]
+#[derive(Debug, thiserror::Error)]
 pub enum InterpretError {
+    #[error("{0}")]
     Tokenize(#[from] tokenizer::TokenizeError),
+    #[error("{0}")]
     Parse(#[from] parser::ParseErrors),
-    #[error(desc = "Error executing statement: {current_statement:?} - {kind:?}\nInterptreter State\n{interpreter:#?}", fmt = debug)]
+    #[error("Error executing statement: {current_statement:?} - {kind:?}\nInterptreter State\n{interpreter:#?}")]
     Execution {
         kind: ExecutionError,
         interpreter: Interpreter,
