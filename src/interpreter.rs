@@ -115,11 +115,8 @@ pub enum InterpretError {
     InvalidSub(Value, Value),
     InvalidMult(Value, Value),
     InvalidDiv(Value, Value),
-    InvalidAnd(Value),
-    InvalidOr(Value),
     InvalidNegate(Value, Value),
     InvalidNot(Value),
-    InvalidCondition(Value),
     UndeclaredVariable(String),
 }
 
@@ -163,26 +160,17 @@ impl Interpreter {
             }
             Statement::If(condition, then_branch, else_branch) => {
                 let condition = self.evaluate(condition)?;
-                if let Value::Boolean(condition) = condition {
-                    if condition {
-                        self.execute(then_branch)?;
-                    } else if let Some(else_branch) = else_branch {
-                        self.execute(else_branch)?;
-                    }
-                } else {
-                    return Err(InterpretError::InvalidCondition(condition));
+                if is_truthy(&condition) {
+                    self.execute(then_branch)?;
+                } else if let Some(else_branch) = else_branch {
+                    self.execute(else_branch)?;
                 }
             }
             Statement::While(condition, body) => loop {
                 let condition = self.evaluate(condition)?;
-                if let Value::Boolean(condition) = condition {
-                    if !condition {
-                        break;
-                    }
-                } else {
-                    return Err(InterpretError::InvalidCondition(condition));
+                while is_truthy(&condition) {
+                    self.execute(body)?;
                 }
-                self.execute(body)?;
             },
         }
         Ok(())
@@ -206,33 +194,25 @@ impl Interpreter {
                 let a = self.evaluate(&a)?;
                 match op {
                     InfixOperator::Or => {
-                        if let Value::Boolean(a) = a {
-                            if a {
-                                return Ok(Value::Boolean(true));
-                            }
-                        } else {
-                            return Err(InterpretError::InvalidOr(a));
+                        if is_truthy(&a) {
+                            return Ok(Value::Boolean(true));
                         }
                         let b = self.evaluate(&b)?;
-                        if let Value::Boolean(b) = b {
-                            return Ok(Value::Boolean(b));
+                        if is_truthy(&b) {
+                            return Ok(Value::Boolean(true));
                         } else {
-                            return Err(InterpretError::InvalidOr(b));
+                            return Ok(Value::Boolean(false));
                         }
                     }
                     InfixOperator::And => {
-                        if let Value::Boolean(a) = a {
-                            if !a {
-                                return Ok(Value::Boolean(false));
-                            }
-                        } else {
-                            return Err(InterpretError::InvalidAnd(a));
+                        if !is_truthy(&a) {
+                            return Ok(Value::Boolean(false));
                         }
                         let b = self.evaluate(&b)?;
-                        if let Value::Boolean(b) = b {
-                            return Ok(Value::Boolean(b));
+                        if !is_truthy(&b) {
+                            return Ok(Value::Boolean(false));
                         } else {
-                            return Err(InterpretError::InvalidAnd(b));
+                            return Ok(Value::Boolean(true));
                         }
                     }
                     InfixOperator::Equal => match (a, self.evaluate(&b)?) {
@@ -314,5 +294,13 @@ impl Interpreter {
                     .ok_or_else(|| InterpretError::UndeclaredVariable(name.clone()))
             }
         }
+    }
+}
+
+fn is_truthy(value: &Value) -> bool {
+    match value {
+        Value::Nil => false,
+        Value::Boolean(b) => *b,
+        _ => true,
     }
 }
