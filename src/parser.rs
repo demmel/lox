@@ -110,13 +110,9 @@ fn var_declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError
         _ => (Expression::Literal(Literal::Nil), &tokens[1..]),
     };
 
-    match rest.first().map(Token::token_type) {
-        Some(TokenType::Semicolon) => Ok((Statement::VarDeclaration(name, expr), &rest[1..])),
-        _ => Err(ParseErrorWithContext {
-            error: ParseError::ExpectedSemicolon,
-            token: tokens.first().cloned(),
-        }),
-    }
+    let tokens = consume(rest, TokenType::Semicolon, ParseError::ExpectedSemicolon)?;
+
+    Ok((Statement::VarDeclaration(name, expr), &tokens))
 }
 
 fn statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
@@ -185,25 +181,15 @@ fn block(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
 }
 
 fn expression_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
-    let (expr, rest) = expression(tokens)?;
-    match rest.first().map(Token::token_type) {
-        Some(TokenType::Semicolon) => Ok((Statement::Expression(expr), &rest[1..])),
-        _ => Err(ParseErrorWithContext {
-            error: ParseError::ExpectedSemicolon,
-            token: tokens.first().cloned(),
-        }),
-    }
+    let (expr, tokens) = expression(tokens)?;
+    let tokens = consume(tokens, TokenType::Semicolon, ParseError::ExpectedSemicolon)?;
+    Ok((Statement::Expression(expr), &tokens))
 }
 
 fn print_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
     let (expr, rest) = expression(tokens)?;
-    match rest.first().map(Token::token_type) {
-        Some(TokenType::Semicolon) => Ok((Statement::Print(expr), &rest[1..])),
-        _ => Err(ParseErrorWithContext {
-            error: ParseError::ExpectedSemicolon,
-            token: tokens.first().cloned(),
-        }),
-    }
+    let tokens = consume(rest, TokenType::Semicolon, ParseError::ExpectedSemicolon)?;
+    Ok((Statement::Print(expr), &tokens))
 }
 
 pub fn expression(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
@@ -361,19 +347,26 @@ fn primary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithCon
         TokenType::Nil => Ok((Expression::Literal(Literal::Nil), &tokens[1..])),
         TokenType::LeftParen => {
             let (expr, rest) = expression(&tokens[1..])?;
-            match rest.first().map(Token::token_type) {
-                Some(TokenType::RightParen) => {
-                    Ok((Expression::Grouping(Box::new(expr)), &rest[1..]))
-                }
-                _ => Err(ParseErrorWithContext {
-                    error: ParseError::ExpectedExpression,
-                    token: tokens.first().cloned(),
-                }),
-            }
+            let tokens = consume(rest, TokenType::RightParen, ParseError::ExpectedRightBrace)?;
+            Ok((Expression::Grouping(Box::new(expr)), tokens))
         }
         TokenType::Identifier(name) => Ok((Expression::Identifier(name.clone()), &tokens[1..])),
         _ => Err(ParseErrorWithContext {
             error: ParseError::ExpectedExpression,
+            token: tokens.first().cloned(),
+        }),
+    }
+}
+
+fn consume(
+    tokens: &[Token],
+    token_type: TokenType,
+    error: ParseError,
+) -> Result<&[Token], ParseErrorWithContext> {
+    match tokens.first().map(Token::token_type) {
+        Some(t) if t == &token_type => Ok(&tokens[1..]),
+        _ => Err(ParseErrorWithContext {
+            error,
             token: tokens.first().cloned(),
         }),
     }
