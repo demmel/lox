@@ -1,3 +1,4 @@
+use core::panic;
 use std::{collections::HashMap, fmt::Display};
 
 use crate::{
@@ -24,16 +25,82 @@ impl Display for Value {
     }
 }
 
-pub struct Interpreter {
+struct Scope {
     variables: HashMap<String, Value>,
 }
 
-impl Default for Interpreter {
-    fn default() -> Self {
+impl Scope {
+    fn new() -> Self {
         Self {
             variables: HashMap::new(),
         }
     }
+
+    fn get(&self, name: &str) -> Option<&Value> {
+        self.variables.get(name)
+    }
+
+    fn declare(&mut self, name: String, value: Value) {
+        self.variables.insert(name, value);
+    }
+
+    fn assign<'a>(&'a mut self, name: &str, value: &Value) -> Option<&'a Value> {
+        if let Some(v) = self.variables.get_mut(name) {
+            *v = value.clone();
+            Some(v)
+        } else {
+            None
+        }
+    }
+}
+
+struct Stack {
+    scopes: Vec<Scope>,
+}
+
+impl Stack {
+    fn new() -> Self {
+        Self {
+            scopes: vec![Scope::new()],
+        }
+    }
+
+    fn push(&mut self) {
+        self.scopes.push(Scope::new());
+    }
+
+    fn pop(&mut self) {
+        self.scopes.pop();
+        if self.scopes.is_empty() {
+            panic!("Popped the last scope");
+        }
+    }
+
+    fn get(&self, name: &str) -> Option<&Value> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(value) = scope.get(name) {
+                return Some(value);
+            }
+        }
+        None
+    }
+
+    fn declare(&mut self, name: String, value: Value) {
+        self.scopes.last_mut().unwrap().declare(name, value);
+    }
+
+    fn assign(&mut self, name: &str, value: &Value) -> Option<&Value> {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(v) = scope.assign(name, value) {
+                return Some(v);
+            }
+        }
+        None
+    }
+}
+
+pub struct Interpreter {
+    stack: Stack,
 }
 
 #[justerror::Error]
@@ -55,7 +122,9 @@ pub enum InterpretError {
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            stack: Stack::new(),
+        }
     }
 
     pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
@@ -80,7 +149,14 @@ impl Interpreter {
             }
             Statement::VarDeclaration(identifier, expression) => {
                 let value = self.evaluate(expression)?;
-                self.variables.insert(identifier.clone(), value);
+                self.stack.declare(identifier.clone(), value);
+            }
+            Statement::Block(statements) => {
+                self.stack.push();
+                for stmt in statements.iter() {
+                    self.execute(stmt)?;
+                }
+                self.stack.pop();
             }
         }
         Ok(())
@@ -89,7 +165,7 @@ impl Interpreter {
     fn evaluate(&mut self, expression: &Expression) -> Result<Value, InterpretError> {
         match expression {
             Expression::Identifier(identifier) => self
-                .variables
+                .stack
                 .get(identifier)
                 .cloned()
                 .ok_or_else(|| InterpretError::UndeclaredVariable(identifier.clone())),
@@ -177,12 +253,10 @@ impl Interpreter {
             }
             Expression::Assign(name, expr) => {
                 let value = self.evaluate(&expr)?;
-                if let Some(v) = self.variables.get_mut(name) {
-                    *v = value.clone();
-                    Ok(value)
-                } else {
-                    Err(InterpretError::UndeclaredVariable(name.clone()))
-                }
+                self.stack
+                    .assign(name, &value)
+                    .cloned()
+                    .ok_or_else(|| InterpretError::UndeclaredVariable(name.clone()))
             }
         }
     }

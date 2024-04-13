@@ -8,6 +8,7 @@ pub enum Statement {
     Expression(Expression),
     VarDeclaration(String, Expression),
     Print(Expression),
+    Block(Vec<Statement>),
 }
 
 #[derive(Debug)]
@@ -63,6 +64,13 @@ impl Display for Statement {
             Statement::Expression(expr) => write!(f, "{};", expr),
             Statement::Print(expr) => write!(f, "print {};", expr),
             Statement::VarDeclaration(name, expr) => write!(f, "var {} = {};", name, expr),
+            Statement::Block(statements) => {
+                writeln!(f, "{{")?;
+                for statement in statements {
+                    writeln!(f, "{}", statement)?;
+                }
+                write!(f, "}}")
+            }
         }
     }
 }

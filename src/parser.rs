@@ -17,6 +17,12 @@ impl std::fmt::Display for ParseErrors {
     }
 }
 
+impl From<ParseErrorWithContext> for ParseErrors {
+    fn from(error: ParseErrorWithContext) -> Self {
+        ParseErrors(vec![error])
+    }
+}
+
 #[derive(Debug)]
 pub struct ParseErrorWithContext {
     pub error: ParseError,
@@ -31,6 +37,7 @@ impl std::fmt::Display for ParseErrorWithContext {
 
 #[justerror::Error]
 pub enum ParseError {
+    ExpectedRightBrace,
     ExpectedIdentifier,
     ExpectedExpression,
     ExpectedSemicolon,
@@ -48,16 +55,9 @@ pub fn program(tokens: &[Token]) -> Result<Program, ParseErrors> {
                 statments.push(stmt);
                 tokens = rest;
             }
-            Err(err) => {
-                errors.push(err);
-                // Skip to the next statement
-                while let Some(token) = tokens.first() {
-                    if token.token_type() == &TokenType::Semicolon {
-                        tokens = &tokens[1..];
-                        break;
-                    }
-                    tokens = &tokens[1..];
-                }
+            Err(mut err) => {
+                errors.append(&mut err.0);
+                tokens = consume_until_after(tokens, &[TokenType::Semicolon]);
             }
         }
     }
@@ -76,9 +76,20 @@ pub fn program(tokens: &[Token]) -> Result<Program, ParseErrors> {
     Ok(Program(statments))
 }
 
-fn declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
+fn consume_until_after<'a>(tokens: &'a [Token], token_types: &[TokenType]) -> &'a [Token] {
+    let mut tokens = tokens;
+    while let Some(token) = tokens.first() {
+        if token_types.iter().any(|t| t == token.token_type()) {
+            return &tokens[1..];
+        }
+        tokens = &tokens[1..];
+    }
+    tokens
+}
+
+fn declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
     match tokens.first().map(Token::token_type) {
-        Some(TokenType::Var) => var_declaration(&tokens[1..]),
+        Some(TokenType::Var) => Ok(var_declaration(&tokens[1..])?),
         _ => statement(tokens),
     }
 }
@@ -108,11 +119,43 @@ fn var_declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseError
     }
 }
 
-fn statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
+fn statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
     match tokens.first().map(Token::token_type) {
-        Some(TokenType::Print) => print_statement(&tokens[1..]),
-        _ => expression_statement(tokens),
+        Some(TokenType::Print) => Ok(print_statement(&tokens[1..])?),
+        Some(TokenType::LeftBrace) => block(&tokens[1..]),
+        _ => Ok(expression_statement(tokens)?),
     }
+}
+
+fn block(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
+    let mut statements = Vec::new();
+    let mut tokens = tokens;
+    let mut errors = Vec::new();
+
+    while let Some(token) = tokens.first() {
+        if token.token_type() == &TokenType::RightBrace {
+            return Ok((Statement::Block(statements), &tokens[1..]));
+        }
+
+        match declaration(tokens) {
+            Ok((stmt, rest)) => {
+                statements.push(stmt);
+                tokens = rest;
+            }
+            Err(mut err) => {
+                errors.append(&mut err.0);
+                tokens =
+                    consume_until_after(tokens, &[TokenType::Semicolon, TokenType::RightBrace]);
+            }
+        }
+    }
+
+    errors.push(ParseErrorWithContext {
+        error: ParseError::ExpectedRightBrace,
+        token: tokens.first().cloned(),
+    });
+
+    Err(ParseErrors(errors))
 }
 
 fn expression_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
