@@ -26,12 +26,18 @@ impl Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    Repl,
     Run(RunArgs),
+    Repl,
+    Expand(ExpandArgs),
 }
 
 #[derive(Debug, Args)]
 struct RunArgs {
+    file: String,
+}
+
+#[derive(Debug, Args)]
+struct ExpandArgs {
     file: String,
 }
 
@@ -44,6 +50,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Run(args) => {
             run_command(args)?;
+        }
+        Command::Expand(args) => {
+            expand_command(args)?;
         }
     }
 
@@ -98,5 +107,13 @@ fn run_command(args: &RunArgs) -> Result<(), RuncCommandError> {
     if let Err(e) = interpreter.interpret(&file) {
         println!("{e}");
     }
+    Ok(())
+}
+
+fn expand_command(args: &ExpandArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let file = std::fs::read_to_string(&args.file)?;
+    let tokens = tokenizer::tokens(&file)?;
+    let ast = parser::program(&tokens)?;
+    println!("{}", ast);
     Ok(())
 }
