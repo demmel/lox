@@ -197,6 +197,24 @@ pub fn expression(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseError
     assignment(tokens)
 }
 
+fn assignment(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
+    let (expr, rest) = logical_or(tokens)?;
+
+    match rest.first().map(Token::token_type) {
+        Some(TokenType::Equal) => match expr {
+            Expression::Identifier(name) => {
+                let (value, rest) = assignment(&rest[1..])?;
+                Ok((Expression::Assign(name, Box::new(value)), rest))
+            }
+            _ => Err(ParseErrorWithContext {
+                error: ParseError::ExpectedIdentifier,
+                token: rest.first().cloned(),
+            }),
+        },
+        _ => Ok((expr, rest)),
+    }
+}
+
 fn binary(
     precedence: impl Fn(&[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext>,
     operator: impl Fn(&Token) -> Option<InfixOperator>,
@@ -216,24 +234,6 @@ fn binary(
     }
 
     Ok((expr, tokens))
-}
-
-fn assignment(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
-    let (expr, rest) = logical_or(tokens)?;
-
-    match rest.first().map(Token::token_type) {
-        Some(TokenType::Equal) => match expr {
-            Expression::Identifier(name) => {
-                let (value, rest) = assignment(&rest[1..])?;
-                Ok((Expression::Assign(name, Box::new(value)), rest))
-            }
-            _ => Err(ParseErrorWithContext {
-                error: ParseError::ExpectedIdentifier,
-                token: rest.first().cloned(),
-            }),
-        },
-        _ => Ok((expr, rest)),
-    }
 }
 
 fn logical_or(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
