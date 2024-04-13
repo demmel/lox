@@ -123,7 +123,26 @@ fn statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
     match tokens.first().map(Token::token_type) {
         Some(TokenType::Print) => Ok(print_statement(&tokens[1..])?),
         Some(TokenType::LeftBrace) => block(&tokens[1..]),
+        Some(TokenType::If) => Ok(if_statement(&tokens[1..])?),
         _ => Ok(expression_statement(tokens)?),
+    }
+}
+
+fn if_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
+    let (condition, rest) = expression(tokens)?;
+    let (then_branch, rest) = block(rest)?;
+    if let Some(TokenType::Else) = rest.first().map(Token::token_type) {
+        let (else_branch, rest) = block(&rest[1..])?;
+        Ok((
+            Statement::If(
+                condition,
+                Box::new(then_branch),
+                Some(Box::new(else_branch)),
+            ),
+            rest,
+        ))
+    } else {
+        Ok((Statement::If(condition, Box::new(then_branch), None), rest))
     }
 }
 
@@ -206,7 +225,7 @@ fn binary(
 }
 
 fn assignment(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
-    let (expr, rest) = equality(tokens)?;
+    let (expr, rest) = logical_or(tokens)?;
 
     match rest.first().map(Token::token_type) {
         Some(TokenType::Equal) => match expr {
@@ -221,6 +240,38 @@ fn assignment(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWith
         },
         _ => Ok((expr, rest)),
     }
+}
+
+fn logical_or(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
+    let (mut left, mut tokens) = logical_and(tokens)?;
+    loop {
+        match tokens.first().map(Token::token_type) {
+            Some(TokenType::Or) => {
+                tokens = &tokens[1..];
+                let (right, rest) = logical_and(tokens)?;
+                left = Expression::Binary(Box::new(left), InfixOperator::Or, Box::new(right));
+                tokens = rest;
+            }
+            _ => break,
+        }
+    }
+    Ok((left, tokens))
+}
+
+fn logical_and(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
+    let (mut left, mut tokens) = equality(tokens)?;
+    loop {
+        match tokens.first().map(Token::token_type) {
+            Some(TokenType::And) => {
+                tokens = &tokens[1..];
+                let (right, rest) = equality(tokens)?;
+                left = Expression::Binary(Box::new(left), InfixOperator::And, Box::new(right));
+                tokens = rest;
+            }
+            _ => break,
+        }
+    }
+    Ok((left, tokens))
 }
 
 fn equality(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {

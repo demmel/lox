@@ -115,8 +115,11 @@ pub enum InterpretError {
     InvalidSub(Value, Value),
     InvalidMult(Value, Value),
     InvalidDiv(Value, Value),
+    InvalidAnd(Value),
+    InvalidOr(Value),
     InvalidNegate(Value, Value),
     InvalidNot(Value),
+    InvalidCondition(Value),
     UndeclaredVariable(String),
 }
 
@@ -158,6 +161,18 @@ impl Interpreter {
                 }
                 self.stack.pop();
             }
+            Statement::If(condition, then_branch, else_branch) => {
+                let condition = self.evaluate(condition)?;
+                if let Value::Boolean(condition) = condition {
+                    if condition {
+                        self.execute(then_branch)?;
+                    } else if let Some(else_branch) = else_branch {
+                        self.execute(else_branch)?;
+                    }
+                } else {
+                    return Err(InterpretError::InvalidCondition(condition));
+                }
+            }
         }
         Ok(())
     }
@@ -178,9 +193,38 @@ impl Interpreter {
             Expression::Grouping(x) => self.evaluate(&x),
             Expression::Binary(a, op, b) => {
                 let a = self.evaluate(&a)?;
-                let b = self.evaluate(&b)?;
                 match op {
-                    InfixOperator::Equal => match (a, b) {
+                    InfixOperator::Or => {
+                        if let Value::Boolean(a) = a {
+                            if a {
+                                return Ok(Value::Boolean(true));
+                            }
+                        } else {
+                            return Err(InterpretError::InvalidOr(a));
+                        }
+                        let b = self.evaluate(&b)?;
+                        if let Value::Boolean(b) = b {
+                            return Ok(Value::Boolean(b));
+                        } else {
+                            return Err(InterpretError::InvalidOr(b));
+                        }
+                    }
+                    InfixOperator::And => {
+                        if let Value::Boolean(a) = a {
+                            if !a {
+                                return Ok(Value::Boolean(false));
+                            }
+                        } else {
+                            return Err(InterpretError::InvalidAnd(a));
+                        }
+                        let b = self.evaluate(&b)?;
+                        if let Value::Boolean(b) = b {
+                            return Ok(Value::Boolean(b));
+                        } else {
+                            return Err(InterpretError::InvalidAnd(b));
+                        }
+                    }
+                    InfixOperator::Equal => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => {
                             Ok(Value::Boolean(if a.is_nan() && b.is_nan() {
                                 // Lox treats NaN as equal to itself
@@ -194,45 +238,45 @@ impl Interpreter {
                         (Value::Nil, Value::Nil) => Ok(Value::Boolean(true)),
                         _ => Ok(Value::Boolean(false)),
                     },
-                    InfixOperator::NotEqual => match (a, b) {
+                    InfixOperator::NotEqual => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a != b)),
                         (Value::String(a), Value::String(b)) => Ok(Value::Boolean(a != b)),
                         (Value::Boolean(a), Value::Boolean(b)) => Ok(Value::Boolean(a != b)),
                         (Value::Nil, Value::Nil) => Ok(Value::Boolean(false)),
                         _ => Ok(Value::Boolean(true)),
                     },
-                    InfixOperator::LessThan => match (a, b) {
+                    InfixOperator::LessThan => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a < b)),
                         (a, b) => Err(InterpretError::InvalidLess(a, b)),
                     },
-                    InfixOperator::LessThanOrEqual => match (a, b) {
+                    InfixOperator::LessThanOrEqual => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a <= b)),
                         (a, b) => Err(InterpretError::InvalidLessEqual(a, b)),
                     },
-                    InfixOperator::GreaterThan => match (a, b) {
+                    InfixOperator::GreaterThan => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a > b)),
                         (a, b) => Err(InterpretError::InvalidGreater(a, b)),
                     },
-                    InfixOperator::GreaterThanOrEqual => match (a, b) {
+                    InfixOperator::GreaterThanOrEqual => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a >= b)),
                         (a, b) => Err(InterpretError::InvalidGreaterEqual(a, b)),
                     },
-                    InfixOperator::Plus => match (a, b) {
+                    InfixOperator::Plus => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
                         (Value::String(a), Value::String(b)) => {
                             Ok(Value::String(format!("{}{}", a, b)))
                         }
                         (a, b) => Err(InterpretError::InvalidAdd(a, b)),
                     },
-                    InfixOperator::Minus => match (a, b) {
+                    InfixOperator::Minus => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a - b)),
                         (a, b) => Err(InterpretError::InvalidSub(a, b)),
                     },
-                    InfixOperator::Multiply => match (a, b) {
+                    InfixOperator::Multiply => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a * b)),
                         (a, b) => Err(InterpretError::InvalidMult(a, b)),
                     },
-                    InfixOperator::Divide => match (a, b) {
+                    InfixOperator::Divide => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a / b)),
                         (a, b) => Err(InterpretError::InvalidDiv(a, b)),
                     },

@@ -9,6 +9,7 @@ pub enum Statement {
     VarDeclaration(String, Expression),
     Print(Expression),
     Block(Vec<Statement>),
+    If(Expression, Box<Statement>, Option<Box<Statement>>),
 }
 
 #[derive(Debug)]
@@ -47,6 +48,8 @@ pub enum InfixOperator {
     Minus,
     Multiply,
     Divide,
+    And,
+    Or,
 }
 
 impl Display for Program {
@@ -70,6 +73,14 @@ impl Display for Statement {
                     writeln!(f, "{}", statement)?;
                 }
                 write!(f, "}}")
+            }
+            Statement::If(condition, then_branch, else_branch) => {
+                write!(f, "if ({}) ", condition)?;
+                writeln!(f, "{}", then_branch)?;
+                if let Some(else_branch) = else_branch {
+                    writeln!(f, "else {}", else_branch)?;
+                }
+                Ok(())
             }
         }
     }
@@ -112,6 +123,8 @@ impl Display for InfixOperator {
             InfixOperator::Minus => write!(f, "-"),
             InfixOperator::Multiply => write!(f, "*"),
             InfixOperator::Divide => write!(f, "/"),
+            InfixOperator::And => write!(f, "&&"),
+            InfixOperator::Or => write!(f, "||"),
         }
     }
 }
