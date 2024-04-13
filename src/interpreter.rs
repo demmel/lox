@@ -28,30 +28,43 @@ impl Display for Value {
 #[derive(Debug, Clone)]
 struct Scope {
     variables: HashMap<String, Value>,
+    functions: HashMap<String, (Vec<String>, Statement)>,
 }
 
 impl Scope {
     fn new() -> Self {
         Self {
             variables: HashMap::new(),
+            functions: HashMap::new(),
         }
     }
 
-    fn get(&self, name: &str) -> Option<&Value> {
+    fn get_variable(&self, name: &str) -> Option<&Value> {
         self.variables.get(name)
     }
 
-    fn declare(&mut self, name: String, value: Value) {
+    fn declare_variable(&mut self, name: String, value: Value) {
         self.variables.insert(name, value);
     }
 
-    fn assign<'a>(&'a mut self, name: &str, value: &Value) -> Option<&'a Value> {
+    fn assign_variable<'a>(&'a mut self, name: &str, value: &Value) -> Option<&'a Value> {
         if let Some(v) = self.variables.get_mut(name) {
             *v = value.clone();
             Some(v)
         } else {
             None
         }
+    }
+
+    fn declare_function(
+        &mut self,
+        name: &str,
+        args: &[String],
+        body: &Statement,
+    ) -> Result<(), ExecutionError> {
+        self.functions
+            .insert(name.to_string(), (args.to_vec(), body.clone()));
+        Ok(())
     }
 }
 
@@ -78,26 +91,41 @@ impl Stack {
         }
     }
 
-    fn get(&self, name: &str) -> Option<&Value> {
+    fn get_variable(&self, name: &str) -> Option<&Value> {
         for scope in self.scopes.iter().rev() {
-            if let Some(value) = scope.get(name) {
+            if let Some(value) = scope.get_variable(name) {
                 return Some(value);
             }
         }
         None
     }
 
-    fn declare(&mut self, name: String, value: Value) {
-        self.scopes.last_mut().unwrap().declare(name, value);
+    fn declare_variable(&mut self, name: String, value: Value) {
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .declare_variable(name, value);
     }
 
-    fn assign(&mut self, name: &str, value: &Value) -> Option<&Value> {
+    fn assign_variable(&mut self, name: &str, value: &Value) -> Option<&Value> {
         for scope in self.scopes.iter_mut().rev() {
-            if let Some(v) = scope.assign(name, value) {
+            if let Some(v) = scope.assign_variable(name, value) {
                 return Some(v);
             }
         }
         None
+    }
+
+    fn declare_function(
+        &mut self,
+        name: &str,
+        args: &[String],
+        body: &Statement,
+    ) -> Result<(), ExecutionError> {
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .declare_function(name, args, body)
     }
 }
 
@@ -171,7 +199,7 @@ impl Interpreter {
             }
             Statement::VarDeclaration(identifier, expression) => {
                 let value = self.evaluate(expression)?;
-                self.stack.declare(identifier.clone(), value);
+                self.stack.declare_variable(identifier.clone(), value);
             }
             Statement::Block(statements) => {
                 self.stack.push();
@@ -193,6 +221,9 @@ impl Interpreter {
                     self.execute(body)?;
                 }
             }
+            Statement::Function(name, args, body) => {
+                self.stack.declare_function(name, args, body)?;
+            }
         }
         Ok(())
     }
@@ -201,7 +232,7 @@ impl Interpreter {
         match expression {
             Expression::Identifier(identifier) => self
                 .stack
-                .get(identifier)
+                .get_variable(identifier)
                 .cloned()
                 .ok_or_else(|| ExecutionError::UndeclaredVariable(identifier.clone())),
             Expression::Literal(literal) => match literal {
@@ -310,7 +341,7 @@ impl Interpreter {
             Expression::Assign(name, expr) => {
                 let value = self.evaluate(&expr)?;
                 self.stack
-                    .assign(name, &value)
+                    .assign_variable(name, &value)
                     .cloned()
                     .ok_or_else(|| ExecutionError::UndeclaredVariable(name.clone()))
             }

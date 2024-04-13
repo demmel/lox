@@ -39,6 +39,8 @@ impl std::fmt::Display for ParseErrorWithContext {
 pub enum ParseError {
     #[error(desc = "Expected {:?}", fmt = debug)]
     Expected(TokenType),
+    #[error(desc = "Expected one of {:?}", fmt = debug)]
+    ExpectedOneOf(Vec<TokenType>),
     #[error(desc = "Unexpected {:?}", fmt = debug)]
     Unexpected(TokenType),
     ExpectedIdentifier,
@@ -95,23 +97,12 @@ fn declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
 }
 
 fn var_declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
-    let name = match tokens.first().map(Token::token_type) {
-        Some(TokenType::Identifier(name)) => name.clone(),
-        _ => {
-            return Err(ParseErrorWithContext {
-                error: ParseError::ExpectedIdentifier,
-                token: tokens.first().cloned(),
-            })
-        }
-    };
-
+    let (name, tokens) = match_identifier(tokens)?;
     let (expr, rest) = match tokens.get(1).map(Token::token_type) {
         Some(TokenType::Equal) => expression(&tokens[2..])?,
         _ => (Expression::Literal(Literal::Nil), &tokens[1..]),
     };
-
     let tokens = consume(rest, TokenType::Semicolon)?;
-
     Ok((Statement::VarDeclaration(name, expr), &tokens))
 }
 
@@ -122,8 +113,42 @@ fn statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
         Some(TokenType::If) => Ok(if_statement(&tokens[1..])?),
         Some(TokenType::While) => Ok(while_statement(&tokens[1..])?),
         Some(TokenType::For) => Ok(for_statement(&tokens[1..])?),
+        Some(TokenType::Fun) => Ok(function(&tokens[1..])?),
         _ => Ok(expression_statement(tokens)?),
     }
+}
+
+fn function(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
+    let (name, tokens) = match_identifier(tokens)?;
+    let mut tokens = consume(tokens, TokenType::LeftParen)?;
+    let mut args = vec![];
+    loop {
+        if let Ok(rest) = consume(tokens, TokenType::RightParen) {
+            tokens = rest;
+            break;
+        }
+
+        let (arg_name, rest) = match_identifier(tokens)?;
+        args.push(arg_name);
+        tokens = rest;
+
+        match tokens.first().map(Token::token_type) {
+            Some(TokenType::Comma) => tokens = &tokens[1..],
+            Some(TokenType::RightParen) => {
+                tokens = &tokens[1..];
+                break;
+            }
+            _ => {
+                return Err(ParseErrorWithContext {
+                    error: ParseError::ExpectedOneOf(vec![TokenType::Comma, TokenType::RightParen]),
+                    token: tokens.first().cloned(),
+                }
+                .into())
+            }
+        }
+    }
+    let (body, tokens) = block(tokens)?;
+    Ok((Statement::Function(name, args, Box::new(body)), tokens))
 }
 
 fn while_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
@@ -406,6 +431,16 @@ fn consume(tokens: &[Token], token_type: TokenType) -> Result<&[Token], ParseErr
         Some(t) if t == &token_type => Ok(&tokens[1..]),
         _ => Err(ParseErrorWithContext {
             error: ParseError::Expected(token_type),
+            token: tokens.first().cloned(),
+        }),
+    }
+}
+
+fn match_identifier(tokens: &[Token]) -> Result<(String, &[Token]), ParseErrorWithContext> {
+    match tokens.first().map(Token::token_type) {
+        Some(TokenType::Identifier(name)) => Ok((name.clone(), &tokens[1..])),
+        _ => Err(ParseErrorWithContext {
+            error: ParseError::ExpectedIdentifier,
             token: tokens.first().cloned(),
         }),
     }

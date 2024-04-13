@@ -11,6 +11,7 @@ pub enum Statement {
     Block(Vec<Statement>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
     While(Expression, Box<Statement>),
+    Function(String, Vec<String>, Box<Statement>),
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +87,16 @@ impl Display for Statement {
             Statement::While(condition, body) => {
                 write!(f, "while ({}) ", condition)?;
                 writeln!(f, "{}", body)
+            }
+            Statement::Function(name, args, body) => {
+                write!(f, "fun {name}(")?;
+                for (i, arg) in args.iter().enumerate() {
+                    write!(f, "{arg}")?;
+                    if i != args.len() - 1 {
+                        write!(f, ", ")?;
+                    }
+                }
+                writeln!(f, ") {body}")
             }
         }
     }
