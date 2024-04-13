@@ -121,6 +121,7 @@ fn statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
         Some(TokenType::LeftBrace) => block(&tokens[1..]),
         Some(TokenType::If) => Ok(if_statement(&tokens[1..])?),
         Some(TokenType::While) => Ok(while_statement(&tokens[1..])?),
+        Some(TokenType::For) => Ok(for_statement(&tokens[1..])?),
         _ => Ok(expression_statement(tokens)?),
     }
 }
@@ -154,6 +155,51 @@ fn if_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> 
             tokens,
         ))
     }
+}
+
+fn for_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
+    let tokens = consume(tokens, TokenType::LeftParen)?;
+
+    let (initializer, tokens) = match tokens.first().map(Token::token_type) {
+        Some(TokenType::Semicolon) => (
+            Statement::Expression(Expression::Literal(Literal::Nil)),
+            &tokens[1..],
+        ),
+        Some(TokenType::Var) => var_declaration(&tokens[1..])?,
+        _ => expression_statement(tokens)?,
+    };
+
+    let (condition, tokens) =
+        if tokens.first().map(Token::token_type) != Some(&TokenType::Semicolon) {
+            expression(tokens)?
+        } else {
+            (Expression::Literal(Literal::Boolean(true)), tokens)
+        };
+
+    let tokens = consume(tokens, TokenType::Semicolon)?;
+
+    let (increment, tokens) = match tokens.first().map(Token::token_type) {
+        Some(TokenType::RightParen) => (Expression::Literal(Literal::Nil), tokens),
+        _ => expression(tokens)?,
+    };
+
+    let tokens = consume(tokens, TokenType::RightParen)?;
+
+    let (statement, tokens) = statement(tokens)?;
+
+    Ok((
+        Statement::Block(vec![
+            initializer,
+            Statement::While(
+                condition,
+                Box::new(Statement::Block(vec![
+                    statement,
+                    Statement::Expression(increment),
+                ])),
+            ),
+        ]),
+        tokens,
+    ))
 }
 
 fn block(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {

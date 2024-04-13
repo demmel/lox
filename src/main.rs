@@ -95,6 +95,8 @@ enum RuncCommandError {
 fn run_command(args: &RunArgs) -> Result<(), RuncCommandError> {
     let file = std::fs::read_to_string(&args.file)?;
     let mut interpreter = Interpreter::new();
-    interpreter.interpret(&file)?;
+    if let Err(e) = interpreter.interpret(&file) {
+        println!("{e}");
+    }
     Ok(())
 }

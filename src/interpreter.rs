@@ -166,12 +166,11 @@ impl Interpreter {
                     self.execute(else_branch)?;
                 }
             }
-            Statement::While(condition, body) => loop {
-                let condition = self.evaluate(condition)?;
-                while is_truthy(&condition) {
+            Statement::While(condition, body) => {
+                while is_truthy(&self.evaluate(condition)?) {
                     self.execute(body)?;
                 }
-            },
+            }
         }
         Ok(())
     }
