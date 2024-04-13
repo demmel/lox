@@ -10,6 +10,7 @@ pub enum Statement {
     Print(Expression),
     Block(Vec<Statement>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
+    While(Expression, Box<Statement>),
 }
 
 #[derive(Debug)]
@@ -81,6 +82,10 @@ impl Display for Statement {
                     writeln!(f, "else {}", else_branch)?;
                 }
                 Ok(())
+            }
+            Statement::While(condition, body) => {
+                write!(f, "while ({}) ", condition)?;
+                writeln!(f, "{}", body)
             }
         }
     }

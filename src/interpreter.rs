@@ -173,6 +173,17 @@ impl Interpreter {
                     return Err(InterpretError::InvalidCondition(condition));
                 }
             }
+            Statement::While(condition, body) => loop {
+                let condition = self.evaluate(condition)?;
+                if let Value::Boolean(condition) = condition {
+                    if !condition {
+                        break;
+                    }
+                } else {
+                    return Err(InterpretError::InvalidCondition(condition));
+                }
+                self.execute(body)?;
+            },
         }
         Ok(())
     }

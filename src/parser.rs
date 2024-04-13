@@ -124,8 +124,15 @@ fn statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
         Some(TokenType::Print) => Ok(print_statement(&tokens[1..])?),
         Some(TokenType::LeftBrace) => block(&tokens[1..]),
         Some(TokenType::If) => Ok(if_statement(&tokens[1..])?),
+        Some(TokenType::While) => Ok(while_statement(&tokens[1..])?),
         _ => Ok(expression_statement(tokens)?),
     }
+}
+
+fn while_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
+    let (condition, rest) = expression(tokens)?;
+    let (body, rest) = block(rest)?;
+    Ok((Statement::While(condition, Box::new(body)), rest))
 }
 
 fn if_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
