@@ -25,6 +25,7 @@ impl Display for Value {
     }
 }
 
+#[derive(Debug, Clone)]
 struct Scope {
     variables: HashMap<String, Value>,
 }
@@ -54,6 +55,7 @@ impl Scope {
     }
 }
 
+#[derive(Debug, Clone)]
 struct Stack {
     scopes: Vec<Scope>,
 }
@@ -99,6 +101,7 @@ impl Stack {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Interpreter {
     stack: Stack,
 }
@@ -107,6 +110,16 @@ pub struct Interpreter {
 pub enum InterpretError {
     Tokenize(#[from] tokenizer::TokenizeError),
     Parse(#[from] parser::ParseErrors),
+    #[error(desc = "Error executing statement: {current_statement:?} - {kind:?}\nInterptreter State\n{interpreter:#?}", fmt = debug)]
+    Execution {
+        kind: ExecutionError,
+        interpreter: Interpreter,
+        current_statement: Option<Statement>,
+    },
+}
+
+#[justerror::Error]
+pub enum ExecutionError {
     InvalidLess(Value, Value),
     InvalidLessEqual(Value, Value),
     InvalidGreater(Value, Value),
@@ -132,13 +145,22 @@ impl Interpreter {
         let program = parser::program(&tokens)?;
 
         for stmt in program.0.iter() {
-            self.execute(stmt)?;
+            match self.execute(stmt) {
+                Ok(()) => {}
+                Err(e) => {
+                    return Err(InterpretError::Execution {
+                        kind: e,
+                        interpreter: self.clone(),
+                        current_statement: Some(stmt.clone()),
+                    })
+                }
+            }
         }
 
         Ok(())
     }
 
-    fn execute(&mut self, stmt: &Statement) -> Result<(), InterpretError> {
+    fn execute(&mut self, stmt: &Statement) -> Result<(), ExecutionError> {
         match stmt {
             Statement::Expression(expression) => {
                 self.evaluate(expression)?;
@@ -175,13 +197,13 @@ impl Interpreter {
         Ok(())
     }
 
-    fn evaluate(&mut self, expression: &Expression) -> Result<Value, InterpretError> {
+    fn evaluate(&mut self, expression: &Expression) -> Result<Value, ExecutionError> {
         match expression {
             Expression::Identifier(identifier) => self
                 .stack
                 .get(identifier)
                 .cloned()
-                .ok_or_else(|| InterpretError::UndeclaredVariable(identifier.clone())),
+                .ok_or_else(|| ExecutionError::UndeclaredVariable(identifier.clone())),
             Expression::Literal(literal) => match literal {
                 Literal::Number(n) => Ok(Value::Number(*n)),
                 Literal::String(s) => Ok(Value::String(s.clone())),
@@ -237,38 +259,38 @@ impl Interpreter {
                     },
                     InfixOperator::LessThan => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a < b)),
-                        (a, b) => Err(InterpretError::InvalidLess(a, b)),
+                        (a, b) => Err(ExecutionError::InvalidLess(a, b)),
                     },
                     InfixOperator::LessThanOrEqual => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a <= b)),
-                        (a, b) => Err(InterpretError::InvalidLessEqual(a, b)),
+                        (a, b) => Err(ExecutionError::InvalidLessEqual(a, b)),
                     },
                     InfixOperator::GreaterThan => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a > b)),
-                        (a, b) => Err(InterpretError::InvalidGreater(a, b)),
+                        (a, b) => Err(ExecutionError::InvalidGreater(a, b)),
                     },
                     InfixOperator::GreaterThanOrEqual => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a >= b)),
-                        (a, b) => Err(InterpretError::InvalidGreaterEqual(a, b)),
+                        (a, b) => Err(ExecutionError::InvalidGreaterEqual(a, b)),
                     },
                     InfixOperator::Plus => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
                         (Value::String(a), Value::String(b)) => {
                             Ok(Value::String(format!("{}{}", a, b)))
                         }
-                        (a, b) => Err(InterpretError::InvalidAdd(a, b)),
+                        (a, b) => Err(ExecutionError::InvalidAdd(a, b)),
                     },
                     InfixOperator::Minus => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a - b)),
-                        (a, b) => Err(InterpretError::InvalidSub(a, b)),
+                        (a, b) => Err(ExecutionError::InvalidSub(a, b)),
                     },
                     InfixOperator::Multiply => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a * b)),
-                        (a, b) => Err(InterpretError::InvalidMult(a, b)),
+                        (a, b) => Err(ExecutionError::InvalidMult(a, b)),
                     },
                     InfixOperator::Divide => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a / b)),
-                        (a, b) => Err(InterpretError::InvalidDiv(a, b)),
+                        (a, b) => Err(ExecutionError::InvalidDiv(a, b)),
                     },
                 }
             }
@@ -277,11 +299,11 @@ impl Interpreter {
                 match op {
                     UnaryOperator::Negate => match x {
                         Value::Number(n) => Ok(Value::Number(-n)),
-                        x => Err(InterpretError::InvalidNegate(x, Value::Nil)),
+                        x => Err(ExecutionError::InvalidNegate(x, Value::Nil)),
                     },
                     UnaryOperator::Not => match x {
                         Value::Boolean(b) => Ok(Value::Boolean(!b)),
-                        x => Err(InterpretError::InvalidNot(x)),
+                        x => Err(ExecutionError::InvalidNot(x)),
                     },
                 }
             }
@@ -290,7 +312,7 @@ impl Interpreter {
                 self.stack
                     .assign(name, &value)
                     .cloned()
-                    .ok_or_else(|| InterpretError::UndeclaredVariable(name.clone()))
+                    .ok_or_else(|| ExecutionError::UndeclaredVariable(name.clone()))
             }
         }
     }

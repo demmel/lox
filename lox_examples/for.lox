@@ -2,4 +2,4 @@ var sum = 0;
 for (var i = 0; i < 10; i = i + 1) {
     sum = sum + i;
 }
-print i;
+print sum;

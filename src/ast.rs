@@ -3,7 +3,7 @@ use std::fmt::Display;
 #[derive(Debug)]
 pub struct Program(pub Vec<Statement>);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Expression(Expression),
     VarDeclaration(String, Expression),
@@ -13,7 +13,7 @@ pub enum Statement {
     While(Expression, Box<Statement>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Identifier(String),
     Literal(Literal),
@@ -23,7 +23,7 @@ pub enum Expression {
     Assign(String, Box<Expression>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Literal {
     Number(f64),
     String(String),
@@ -31,13 +31,13 @@ pub enum Literal {
     Nil,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UnaryOperator {
     Negate,
     Not,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum InfixOperator {
     Equal,
     NotEqual,
