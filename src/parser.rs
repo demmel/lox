@@ -42,6 +42,7 @@ pub enum ParseError {
     ExpectedExpression,
     ExpectedSemicolon,
     ExpectedEof,
+    UnexpectedEof,
 }
 
 pub fn program(tokens: &[Token]) -> Result<Program, ParseErrors> {
@@ -236,35 +237,25 @@ fn assignment(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWith
 }
 
 fn logical_or(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
-    let (mut left, mut tokens) = logical_and(tokens)?;
-    loop {
-        match tokens.first().map(Token::token_type) {
-            Some(TokenType::Or) => {
-                tokens = &tokens[1..];
-                let (right, rest) = logical_and(tokens)?;
-                left = Expression::Binary(Box::new(left), InfixOperator::Or, Box::new(right));
-                tokens = rest;
-            }
-            _ => break,
-        }
-    }
-    Ok((left, tokens))
+    binary(
+        logical_and,
+        |token| match token.token_type() {
+            TokenType::Or => Some(InfixOperator::Or),
+            _ => None,
+        },
+        tokens,
+    )
 }
 
 fn logical_and(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
-    let (mut left, mut tokens) = equality(tokens)?;
-    loop {
-        match tokens.first().map(Token::token_type) {
-            Some(TokenType::And) => {
-                tokens = &tokens[1..];
-                let (right, rest) = equality(tokens)?;
-                left = Expression::Binary(Box::new(left), InfixOperator::And, Box::new(right));
-                tokens = rest;
-            }
-            _ => break,
-        }
-    }
-    Ok((left, tokens))
+    binary(
+        equality,
+        |token| match token.token_type() {
+            TokenType::And => Some(InfixOperator::And),
+            _ => None,
+        },
+        tokens,
+    )
 }
 
 fn equality(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
@@ -331,7 +322,7 @@ fn unary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithConte
 fn primary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
     let Some(token) = tokens.first() else {
         return Err(ParseErrorWithContext {
-            error: ParseError::ExpectedExpression,
+            error: ParseError::UnexpectedEof,
             token: tokens.first().cloned(),
         });
     };
