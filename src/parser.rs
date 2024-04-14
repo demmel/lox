@@ -224,6 +224,7 @@ fn function<'a>(
             }
         }
     }
+    let tokens = consume(context, tokens, TokenType::LeftBrace)?;
     let (body, tokens) = block(context, tokens)?;
     Ok((Statement::Function(name, args, Box::new(body)), tokens))
 }
@@ -321,6 +322,7 @@ fn block<'a>(
     tokens: &'a [Token],
 ) -> Result<(Statement, &'a [Token]), ParseErrors> {
     let _guard = context.push("block");
+
     let mut statements = Vec::new();
     let mut tokens = tokens;
     let mut errors = Vec::new();
