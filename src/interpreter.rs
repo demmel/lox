@@ -2,12 +2,9 @@ mod environment;
 
 use std::fmt::Display;
 
-use crate::{
-    ast::{Expression, InfixOperator, Literal, Program, Statement, UnaryOperator},
-    parser, tokenizer,
-};
+use crate::ast::{Expression, InfixOperator, Literal, Program, Statement, UnaryOperator};
 
-use self::environment::Environment;
+use self::environment::{Declarable, Environment};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -61,6 +58,7 @@ pub enum ExecutionErrorKind {
     UndeclaredFunction(String),
     InvalidFunctionCall(String, usize, usize),
     CannotReturnFromTopLevel,
+    FunctionRedeclaration(String),
 }
 
 impl Interpreter {
@@ -68,9 +66,9 @@ impl Interpreter {
         let mut stack = Environment::new();
 
         stack
-            .declare_function(
-                "clock",
-                Callable::Builtin(
+            .declare(
+                "clock".to_string(),
+                Declarable::Function(Callable::Builtin(
                     |_: &[Value]| {
                         Ok(Value::Number(
                             std::time::SystemTime::now()
@@ -80,7 +78,7 @@ impl Interpreter {
                         ))
                     },
                     0,
-                ),
+                )),
             )
             .expect("Builtin functions should not fail to declare");
 
@@ -117,7 +115,8 @@ impl Interpreter {
             }
             Statement::VarDeclaration(identifier, expression) => {
                 let value = self.evaluate(expression)?;
-                self.environment.declare_variable(identifier.clone(), value);
+                self.environment
+                    .declare(identifier.clone(), Declarable::Variable(value))?;
                 Value::Unit
             }
             Statement::Block(statements) => {
@@ -153,8 +152,10 @@ impl Interpreter {
                 res
             }
             Statement::Function(name, args, body) => {
-                self.environment
-                    .declare_function(name, Callable::Function(args.to_vec(), (&**body).clone()))?;
+                self.environment.declare(
+                    name.clone(),
+                    Declarable::Function(Callable::Function(args.to_vec(), (&**body).clone())),
+                )?;
                 Value::Unit
             }
             Statement::Return(expression) => {
@@ -175,11 +176,10 @@ impl Interpreter {
 
     fn evaluate(&mut self, expression: &Expression) -> Result<Value, ExecutionErrorKind> {
         let res = match expression {
-            Expression::Identifier(identifier) => self
-                .environment
-                .get_variable(identifier)
-                .cloned()
-                .ok_or_else(|| ExecutionErrorKind::UndeclaredVariable(identifier.clone())),
+            Expression::Identifier(identifier) => match self.environment.get(identifier) {
+                Some(Declarable::Variable(v)) => Ok(v.clone()),
+                _ => return Err(ExecutionErrorKind::UndeclaredVariable(identifier.clone())),
+            },
             Expression::Literal(literal) => match literal {
                 Literal::Number(n) => Ok(Value::Number(*n)),
                 Literal::String(s) => Ok(Value::String(s.clone())),
@@ -299,11 +299,10 @@ impl Interpreter {
                     ));
                 };
 
-                let callable = self
-                    .environment
-                    .get_callable(name)
-                    .ok_or_else(|| ExecutionErrorKind::UndeclaredFunction(name.clone()))?
-                    .clone();
+                let callable = match self.environment.get(name) {
+                    Some(Declarable::Function(callable)) => callable.clone(),
+                    _ => return Err(ExecutionErrorKind::UndeclaredFunction(name.clone())),
+                };
 
                 if args.len() != callable.arity() {
                     return Err(ExecutionErrorKind::InvalidFunctionCall(
@@ -349,7 +348,7 @@ impl Callable {
                     let arg_value = interpreter.evaluate(arg_value)?;
                     interpreter
                         .environment
-                        .declare_variable(arg_name.clone(), arg_value);
+                        .declare(arg_name.clone(), Declarable::Variable(arg_value))?;
                 }
                 let result = interpreter.execute(body)?;
                 interpreter.environment.pop();
