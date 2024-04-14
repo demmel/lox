@@ -151,7 +151,7 @@ impl Interpreter {
                 }
                 res
             }
-            Statement::Function(name, args, body) => {
+            Statement::FunctionDeclaration(name, args, body) => {
                 self.environment.declare(
                     name.clone(),
                     Declarable::Function(Callable::Function(args.to_vec(), (&**body).clone())),

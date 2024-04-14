@@ -7,11 +7,11 @@ pub struct Program(pub Vec<Statement>);
 pub enum Statement {
     Expression(Expression),
     VarDeclaration(String, Expression),
+    FunctionDeclaration(String, Vec<String>, Box<Statement>),
     Print(Expression),
     Block(Vec<Statement>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
     While(Expression, Box<Statement>),
-    Function(String, Vec<String>, Box<Statement>),
     Return(Option<Expression>),
 }
 
@@ -90,7 +90,7 @@ impl Display for Statement {
                 write!(f, "while ({}) ", condition)?;
                 writeln!(f, "{}", body)
             }
-            Statement::Function(name, args, body) => {
+            Statement::FunctionDeclaration(name, args, body) => {
                 write!(f, "fun {name}(")?;
                 for (i, arg) in args.iter().enumerate() {
                     write!(f, "{arg}")?;

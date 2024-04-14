@@ -158,7 +158,7 @@ fn declaration<'a>(
     let _guard = context.push("declaration");
     match tokens.first().map(Token::token_type) {
         Some(TokenType::Var) => Ok(var_declaration(context, &tokens[1..])?),
-        Some(TokenType::Fun) => Ok(function(context, &tokens[1..])?),
+        Some(TokenType::Fun) => Ok(function_declaration(context, &tokens[1..])?),
         _ => statement(context, tokens),
     }
 }
@@ -209,7 +209,7 @@ fn return_statement<'a>(
     Ok((Statement::Return(expr), tokens))
 }
 
-fn function<'a>(
+fn function_declaration<'a>(
     context: &ParseContext,
     tokens: &'a [Token],
 ) -> Result<(Statement, &'a [Token]), ParseErrors> {
@@ -245,7 +245,10 @@ fn function<'a>(
     }
     let tokens = consume(context, tokens, TokenType::LeftBrace)?;
     let (body, tokens) = block(context, tokens)?;
-    Ok((Statement::Function(name, args, Box::new(body)), tokens))
+    Ok((
+        Statement::FunctionDeclaration(name, args, Box::new(body)),
+        tokens,
+    ))
 }
 
 fn while_statement<'a>(
