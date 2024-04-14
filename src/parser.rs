@@ -62,6 +62,8 @@ pub enum ParseError {
     Unexpected(TokenType),
     #[error("Unexpected identifier")]
     ExpectedIdentifier,
+    #[error("No more than 255 arguments")]
+    TooManyArguments,
 }
 
 #[derive(Debug, Clone)]
@@ -570,22 +572,30 @@ fn call<'a>(
     tokens: &'a [Token],
 ) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
     let _guard = context.push("call");
-    let (expr, mut tokens) = primary(context, tokens)?;
+    let (mut expr, mut tokens) = primary(context, tokens)?;
 
-    let Expression::Identifier(name) = &expr else {
-        return Ok((expr, tokens));
-    };
+    while matches!(
+        tokens.first().map(Token::token_type),
+        Some(TokenType::LeftParen)
+    ) {
+        tokens = &tokens[1..];
+        let (args, rest) = arguments(context, tokens)?;
+        tokens = rest;
+        expr = Expression::FunctionCall(Box::new(expr), args);
+    }
 
-    let Some(TokenType::LeftParen) = tokens.first().map(Token::token_type) else {
-        return Ok((expr, tokens));
-    };
+    Ok((expr, tokens))
+}
 
+fn arguments<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Vec<Expression>, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("arguments");
     let mut args = Vec::new();
-    tokens = &tokens[1..];
-
+    let mut tokens = tokens;
     loop {
         if tokens.first().map(Token::token_type) == Some(&TokenType::RightParen) {
-            tokens = &tokens[1..];
             break;
         }
         let (arg, rest) = expression(context, tokens)?;
@@ -602,13 +612,19 @@ fn call<'a>(
                     error: ParseError::ExpectedOneOf(vec![TokenType::Comma, TokenType::RightParen]),
                     context: context.clone(),
                     token: tokens.first().cloned(),
-                }
-                .into())
+                });
             }
         }
     }
-
-    Ok((Expression::FunctionCall(name.clone(), args), tokens))
+    if args.len() > 255 {
+        return Err(ParseErrorWithContext {
+            error: ParseError::TooManyArguments,
+            context: context.clone(),
+            token: tokens.first().cloned(),
+        }
+        .into());
+    }
+    Ok((args, tokens))
 }
 
 fn primary<'a>(

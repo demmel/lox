@@ -405,7 +405,14 @@ impl Interpreter {
                     .cloned()
                     .ok_or_else(|| ExecutionError::UndeclaredVariable(name.clone()))
             }
-            Expression::FunctionCall(name, args) => {
+            Expression::FunctionCall(expr, args) => {
+                let Expression::Identifier(name) = expr.as_ref() else {
+                    return Err(ExecutionError::InvalidFunctionCall(
+                        "not an identifier".to_string(),
+                        0,
+                        0,
+                    ));
+                };
                 let (arg_names, body) = self
                     .stack
                     .get_function(name)

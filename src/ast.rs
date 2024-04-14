@@ -23,7 +23,7 @@ pub enum Expression {
     Binary(Box<Expression>, InfixOperator, Box<Expression>),
     Unary(UnaryOperator, Box<Expression>),
     Assign(String, Box<Expression>),
-    FunctionCall(String, Vec<Expression>),
+    FunctionCall(Box<Expression>, Vec<Expression>),
 }
 
 #[derive(Debug, Clone)]
