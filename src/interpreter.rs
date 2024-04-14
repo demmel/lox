@@ -405,7 +405,7 @@ impl Interpreter {
                     .cloned()
                     .ok_or_else(|| ExecutionError::UndeclaredVariable(name.clone()))
             }
-            Expression::FunctionCall(expr, args) => {
+            Expression::Call(expr, args) => {
                 let Expression::Identifier(name) = expr.as_ref() else {
                     return Err(ExecutionError::InvalidFunctionCall(
                         "not an identifier".to_string(),

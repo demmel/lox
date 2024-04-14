@@ -581,7 +581,7 @@ fn call<'a>(
         tokens = &tokens[1..];
         let (args, rest) = arguments(context, tokens)?;
         tokens = rest;
-        expr = Expression::FunctionCall(Box::new(expr), args);
+        expr = Expression::Call(Box::new(expr), args);
     }
 
     Ok((expr, tokens))
