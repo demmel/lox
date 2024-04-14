@@ -31,13 +31,15 @@ impl Display for Value {
 struct Scope {
     variables: HashMap<String, Value>,
     functions: HashMap<String, (Vec<String>, Statement)>,
+    is_function: bool,
 }
 
 impl Scope {
-    fn new() -> Self {
+    fn new(is_function: bool) -> Self {
         Self {
             variables: HashMap::new(),
             functions: HashMap::new(),
+            is_function,
         }
     }
 
@@ -77,17 +79,19 @@ impl Scope {
 #[derive(Debug, Clone)]
 struct Stack {
     scopes: Vec<Scope>,
+    is_returning: bool,
 }
 
 impl Stack {
     fn new() -> Self {
         Self {
-            scopes: vec![Scope::new()],
+            scopes: vec![Scope::new(false)],
+            is_returning: false,
         }
     }
 
-    fn push(&mut self) {
-        self.scopes.push(Scope::new());
+    fn push(&mut self, is_function: bool) {
+        self.scopes.push(Scope::new(is_function));
     }
 
     fn pop(&mut self) {
@@ -142,6 +146,14 @@ impl Stack {
             .unwrap()
             .declare_function(name, args, body)
     }
+
+    fn is_in_function(&self) -> bool {
+        self.scopes.iter().any(|scope| scope.is_function)
+    }
+
+    fn set_returning(&mut self, is_returning: bool) {
+        self.is_returning = is_returning;
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -178,6 +190,7 @@ pub enum ExecutionError {
     UndeclaredVariable(String),
     UndeclaredFunction(String),
     InvalidFunctionCall(String, usize, usize),
+    CannotReturnFromTopLevel,
 }
 
 impl Interpreter {
@@ -208,43 +221,71 @@ impl Interpreter {
     }
 
     fn execute(&mut self, stmt: &Statement) -> Result<Value, ExecutionError> {
-        match stmt {
+        let result = match stmt {
             Statement::Expression(expression) => {
                 self.evaluate(expression)?;
+                Value::Unit
             }
             Statement::Print(expression) => {
                 let value = self.evaluate(expression)?;
                 println!("{}", value);
+                Value::Unit
             }
             Statement::VarDeclaration(identifier, expression) => {
                 let value = self.evaluate(expression)?;
                 self.stack.declare_variable(identifier.clone(), value);
+                Value::Unit
             }
             Statement::Block(statements) => {
-                self.stack.push();
+                self.stack.push(false);
+                let mut res = Value::Unit;
                 for stmt in statements.iter() {
-                    self.execute(stmt)?;
+                    res = self.execute(stmt)?;
+                    if self.stack.is_returning {
+                        break;
+                    }
                 }
                 self.stack.pop();
+                res
             }
             Statement::If(condition, then_branch, else_branch) => {
                 let condition = self.evaluate(condition)?;
                 if is_truthy(&condition) {
-                    self.execute(then_branch)?;
+                    self.execute(then_branch)?
                 } else if let Some(else_branch) = else_branch {
-                    self.execute(else_branch)?;
+                    self.execute(else_branch)?
+                } else {
+                    Value::Unit
                 }
             }
             Statement::While(condition, body) => {
+                let mut res = Value::Unit;
                 while is_truthy(&self.evaluate(condition)?) {
-                    self.execute(body)?;
+                    res = self.execute(body)?;
+                    if self.stack.is_returning {
+                        break;
+                    }
                 }
+                res
             }
             Statement::Function(name, args, body) => {
                 self.stack.declare_function(name, args, body)?;
+                Value::Unit
             }
-        }
-        Ok(Value::Unit)
+            Statement::Return(expression) => {
+                if !self.stack.is_in_function() {
+                    return Err(ExecutionError::CannotReturnFromTopLevel);
+                }
+                let mut result = Value::Unit;
+                if let Some(expression) = expression {
+                    result = self.evaluate(expression)?;
+                };
+                self.stack.set_returning(true);
+                result
+            }
+        };
+
+        Ok(result)
     }
 
     fn evaluate(&mut self, expression: &Expression) -> Result<Value, ExecutionError> {
@@ -377,13 +418,14 @@ impl Interpreter {
                         arg_names.len(),
                     ));
                 }
-                self.stack.push();
+                self.stack.push(true);
                 for (arg_name, arg_value) in arg_names.iter().zip(args.iter()) {
                     let evaluated_arg = self.evaluate(arg_value)?;
                     self.stack.declare_variable(arg_name.clone(), evaluated_arg);
                 }
                 let result = self.execute(&body)?;
                 self.stack.pop();
+                self.stack.set_returning(false);
                 Ok(result)
             }
         }

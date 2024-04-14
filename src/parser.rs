@@ -186,8 +186,25 @@ fn statement<'a>(
         Some(TokenType::If) => Ok(if_statement(context, &tokens[1..])?),
         Some(TokenType::While) => Ok(while_statement(context, &tokens[1..])?),
         Some(TokenType::For) => Ok(for_statement(context, &tokens[1..])?),
+        Some(TokenType::Return) => Ok(return_statement(context, &tokens[1..])?),
         _ => Ok(expression_statement(context, tokens)?),
     }
+}
+
+fn return_statement<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Statement, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("return_statement");
+    let (expr, tokens) = match tokens.first().map(Token::token_type) {
+        Some(TokenType::Semicolon) => (None, &tokens[1..]),
+        _ => {
+            let (expr, rest) = expression(context, tokens)?;
+            let tokens = consume(context, rest, TokenType::Semicolon)?;
+            (Some(expr), tokens)
+        }
+    };
+    Ok((Statement::Return(expr), tokens))
 }
 
 fn function<'a>(

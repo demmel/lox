@@ -12,6 +12,7 @@ pub enum Statement {
     If(Expression, Box<Statement>, Option<Box<Statement>>),
     While(Expression, Box<Statement>),
     Function(String, Vec<String>, Box<Statement>),
+    Return(Option<Expression>),
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +99,13 @@ impl Display for Statement {
                     }
                 }
                 writeln!(f, ") {body}")
+            }
+            Statement::Return(expr) => {
+                if let Some(expr) = expr {
+                    write!(f, "return {};", expr)
+                } else {
+                    write!(f, "return;")
+                }
             }
         }
     }
