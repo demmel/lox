@@ -28,9 +28,50 @@ impl Display for Value {
 }
 
 #[derive(Debug, Clone)]
+enum Callable {
+    Function(Vec<String>, Statement),
+    Builtin(fn(&[Value]) -> Result<Value, ExecutionError>, usize),
+}
+
+impl Callable {
+    fn call(
+        &self,
+        interpreter: &mut Interpreter,
+        args: &[Expression],
+    ) -> Result<Value, ExecutionError> {
+        match self {
+            Callable::Function(arg_names, body) => {
+                interpreter.stack.push(true);
+                for (arg_name, arg_value) in arg_names.iter().zip(args.iter()) {
+                    let arg_value = interpreter.evaluate(arg_value)?;
+                    interpreter
+                        .stack
+                        .declare_variable(arg_name.clone(), arg_value);
+                }
+                let result = interpreter.execute(body)?;
+                interpreter.stack.pop();
+                interpreter.stack.set_returning(false);
+                Ok(result)
+            }
+            Callable::Builtin(f, _) => f(&args
+                .iter()
+                .map(|arg| interpreter.evaluate(arg))
+                .collect::<Result<Vec<_>, _>>()?),
+        }
+    }
+
+    fn arity(&self) -> usize {
+        match self {
+            Callable::Function(args, _) => args.len(),
+            Callable::Builtin(_, arity) => *arity,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 struct Scope {
     variables: HashMap<String, Value>,
-    functions: HashMap<String, (Vec<String>, Statement)>,
+    functions: HashMap<String, Callable>,
     is_function: bool,
 }
 
@@ -47,7 +88,7 @@ impl Scope {
         self.variables.get(name)
     }
 
-    fn get_function(&self, name: &str) -> Option<&(Vec<String>, Statement)> {
+    fn get_function(&self, name: &str) -> Option<&Callable> {
         self.functions.get(name)
     }
 
@@ -64,14 +105,8 @@ impl Scope {
         }
     }
 
-    fn declare_function(
-        &mut self,
-        name: &str,
-        args: &[String],
-        body: &Statement,
-    ) -> Result<(), ExecutionError> {
-        self.functions
-            .insert(name.to_string(), (args.to_vec(), body.clone()));
+    fn declare_function(&mut self, name: &str, callable: Callable) -> Result<(), ExecutionError> {
+        self.functions.insert(name.to_string(), callable);
         Ok(())
     }
 }
@@ -110,7 +145,7 @@ impl Stack {
         None
     }
 
-    fn get_function(&self, name: &str) -> Option<&(Vec<String>, Statement)> {
+    fn get_callable(&self, name: &str) -> Option<&Callable> {
         for scope in self.scopes.iter().rev() {
             if let Some(value) = scope.get_function(name) {
                 return Some(value);
@@ -135,16 +170,11 @@ impl Stack {
         None
     }
 
-    fn declare_function(
-        &mut self,
-        name: &str,
-        args: &[String],
-        body: &Statement,
-    ) -> Result<(), ExecutionError> {
+    fn declare_function(&mut self, name: &str, callable: Callable) -> Result<(), ExecutionError> {
         self.scopes
             .last_mut()
             .unwrap()
-            .declare_function(name, args, body)
+            .declare_function(name, callable)
     }
 
     fn is_in_function(&self) -> bool {
@@ -167,11 +197,11 @@ pub enum InterpretError {
     Tokenize(#[from] tokenizer::TokenizeError),
     #[error("{0}")]
     Parse(#[from] parser::ParseErrors),
-    #[error("Error executing statement: {current_statement:?} - {kind:?}\nInterptreter State\n{interpreter:#?}")]
+    #[error("Error executing statement: {current_statement} - {kind:?}")]
     Execution {
         kind: ExecutionError,
         interpreter: Interpreter,
-        current_statement: Option<Statement>,
+        current_statement: Statement,
     },
 }
 
@@ -195,9 +225,26 @@ pub enum ExecutionError {
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self {
-            stack: Stack::new(),
-        }
+        let mut stack = Stack::new();
+
+        stack
+            .declare_function(
+                "clock",
+                Callable::Builtin(
+                    |_: &[Value]| {
+                        Ok(Value::Number(
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs_f64(),
+                        ))
+                    },
+                    0,
+                ),
+            )
+            .expect("Builtin functions should not fail to declare");
+
+        Self { stack }
     }
 
     pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
@@ -211,7 +258,7 @@ impl Interpreter {
                     return Err(InterpretError::Execution {
                         kind: e,
                         interpreter: self.clone(),
-                        current_statement: Some(stmt.clone()),
+                        current_statement: stmt.clone(),
                     })
                 }
             }
@@ -269,7 +316,8 @@ impl Interpreter {
                 res
             }
             Statement::Function(name, args, body) => {
-                self.stack.declare_function(name, args, body)?;
+                self.stack
+                    .declare_function(name, Callable::Function(args.to_vec(), (&**body).clone()))?;
                 Value::Unit
             }
             Statement::Return(expression) => {
@@ -289,7 +337,7 @@ impl Interpreter {
     }
 
     fn evaluate(&mut self, expression: &Expression) -> Result<Value, ExecutionError> {
-        match expression {
+        let res = match expression {
             Expression::Identifier(identifier) => self
                 .stack
                 .get_variable(identifier)
@@ -413,29 +461,27 @@ impl Interpreter {
                         0,
                     ));
                 };
-                let (arg_names, body) = self
+
+                let callable = self
                     .stack
-                    .get_function(name)
+                    .get_callable(name)
                     .ok_or_else(|| ExecutionError::UndeclaredFunction(name.clone()))?
                     .clone();
-                if args.len() != arg_names.len() {
+
+                if args.len() != callable.arity() {
                     return Err(ExecutionError::InvalidFunctionCall(
                         name.clone(),
                         args.len(),
-                        arg_names.len(),
+                        callable.arity(),
                     ));
                 }
-                self.stack.push(true);
-                for (arg_name, arg_value) in arg_names.iter().zip(args.iter()) {
-                    let evaluated_arg = self.evaluate(arg_value)?;
-                    self.stack.declare_variable(arg_name.clone(), evaluated_arg);
-                }
-                let result = self.execute(&body)?;
-                self.stack.pop();
-                self.stack.set_returning(false);
+
+                let result = callable.call(self, args.as_slice())?;
+
                 Ok(result)
             }
-        }
+        }?;
+        Ok(res)
     }
 }
 

@@ -596,6 +596,7 @@ fn arguments<'a>(
     let mut tokens = tokens;
     loop {
         if tokens.first().map(Token::token_type) == Some(&TokenType::RightParen) {
+            tokens = &tokens[1..];
             break;
         }
         let (arg, rest) = expression(context, tokens)?;
