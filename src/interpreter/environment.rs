@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{Callable, ExecutionError, Value};
+use super::{Callable, ExecutionErrorKind, Value};
 
 #[derive(Debug, Clone)]
 struct Scope {
@@ -39,7 +39,11 @@ impl Scope {
         }
     }
 
-    fn declare_function(&mut self, name: &str, callable: Callable) -> Result<(), ExecutionError> {
+    fn declare_function(
+        &mut self,
+        name: &str,
+        callable: Callable,
+    ) -> Result<(), ExecutionErrorKind> {
         self.functions.insert(name.to_string(), callable);
         Ok(())
     }
@@ -105,7 +109,7 @@ impl Environment {
         &mut self,
         name: &str,
         callable: Callable,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<(), ExecutionErrorKind> {
         self.stack
             .last_mut()
             .unwrap()

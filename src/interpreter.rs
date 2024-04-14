@@ -3,7 +3,7 @@ mod environment;
 use std::fmt::Display;
 
 use crate::{
-    ast::{Expression, InfixOperator, Literal, Statement, UnaryOperator},
+    ast::{Expression, InfixOperator, Literal, Program, Statement, UnaryOperator},
     parser, tokenizer,
 };
 
@@ -36,21 +36,17 @@ pub struct Interpreter {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum InterpretError {
-    #[error("{0}")]
-    Tokenize(#[from] tokenizer::TokenizeError),
-    #[error("{0}")]
-    Parse(#[from] parser::ParseErrors),
+pub enum ExecutionError {
     #[error("Error executing statement: {current_statement} - {kind:?}")]
     Execution {
-        kind: ExecutionError,
+        kind: ExecutionErrorKind,
         interpreter: Interpreter,
         current_statement: Statement,
     },
 }
 
 #[justerror::Error]
-pub enum ExecutionError {
+pub enum ExecutionErrorKind {
     InvalidLess(Value, Value),
     InvalidLessEqual(Value, Value),
     InvalidGreater(Value, Value),
@@ -91,15 +87,12 @@ impl Interpreter {
         Self { environment: stack }
     }
 
-    pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
-        let tokens = tokenizer::tokens(source)?;
-        let program = parser::program(&tokens)?;
-
+    pub fn interpret(&mut self, program: &Program) -> Result<(), ExecutionError> {
         for stmt in program.0.iter() {
             match self.execute(stmt) {
                 Ok(_) => {}
                 Err(e) => {
-                    return Err(InterpretError::Execution {
+                    return Err(ExecutionError::Execution {
                         kind: e,
                         interpreter: self.clone(),
                         current_statement: stmt.clone(),
@@ -111,7 +104,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn execute(&mut self, stmt: &Statement) -> Result<Value, ExecutionError> {
+    fn execute(&mut self, stmt: &Statement) -> Result<Value, ExecutionErrorKind> {
         let result = match stmt {
             Statement::Expression(expression) => {
                 self.evaluate(expression)?;
@@ -166,7 +159,7 @@ impl Interpreter {
             }
             Statement::Return(expression) => {
                 if !self.environment.is_in_function() {
-                    return Err(ExecutionError::CannotReturnFromTopLevel);
+                    return Err(ExecutionErrorKind::CannotReturnFromTopLevel);
                 }
                 let mut result = Value::Unit;
                 if let Some(expression) = expression {
@@ -180,13 +173,13 @@ impl Interpreter {
         Ok(result)
     }
 
-    fn evaluate(&mut self, expression: &Expression) -> Result<Value, ExecutionError> {
+    fn evaluate(&mut self, expression: &Expression) -> Result<Value, ExecutionErrorKind> {
         let res = match expression {
             Expression::Identifier(identifier) => self
                 .environment
                 .get_variable(identifier)
                 .cloned()
-                .ok_or_else(|| ExecutionError::UndeclaredVariable(identifier.clone())),
+                .ok_or_else(|| ExecutionErrorKind::UndeclaredVariable(identifier.clone())),
             Expression::Literal(literal) => match literal {
                 Literal::Number(n) => Ok(Value::Number(*n)),
                 Literal::String(s) => Ok(Value::String(s.clone())),
@@ -242,38 +235,38 @@ impl Interpreter {
                     },
                     InfixOperator::LessThan => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a < b)),
-                        (a, b) => Err(ExecutionError::InvalidLess(a, b)),
+                        (a, b) => Err(ExecutionErrorKind::InvalidLess(a, b)),
                     },
                     InfixOperator::LessThanOrEqual => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a <= b)),
-                        (a, b) => Err(ExecutionError::InvalidLessEqual(a, b)),
+                        (a, b) => Err(ExecutionErrorKind::InvalidLessEqual(a, b)),
                     },
                     InfixOperator::GreaterThan => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a > b)),
-                        (a, b) => Err(ExecutionError::InvalidGreater(a, b)),
+                        (a, b) => Err(ExecutionErrorKind::InvalidGreater(a, b)),
                     },
                     InfixOperator::GreaterThanOrEqual => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a >= b)),
-                        (a, b) => Err(ExecutionError::InvalidGreaterEqual(a, b)),
+                        (a, b) => Err(ExecutionErrorKind::InvalidGreaterEqual(a, b)),
                     },
                     InfixOperator::Plus => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
                         (Value::String(a), Value::String(b)) => {
                             Ok(Value::String(format!("{}{}", a, b)))
                         }
-                        (a, b) => Err(ExecutionError::InvalidAdd(a, b)),
+                        (a, b) => Err(ExecutionErrorKind::InvalidAdd(a, b)),
                     },
                     InfixOperator::Minus => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a - b)),
-                        (a, b) => Err(ExecutionError::InvalidSub(a, b)),
+                        (a, b) => Err(ExecutionErrorKind::InvalidSub(a, b)),
                     },
                     InfixOperator::Multiply => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a * b)),
-                        (a, b) => Err(ExecutionError::InvalidMult(a, b)),
+                        (a, b) => Err(ExecutionErrorKind::InvalidMult(a, b)),
                     },
                     InfixOperator::Divide => match (a, self.evaluate(&b)?) {
                         (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a / b)),
-                        (a, b) => Err(ExecutionError::InvalidDiv(a, b)),
+                        (a, b) => Err(ExecutionErrorKind::InvalidDiv(a, b)),
                     },
                 }
             }
@@ -282,11 +275,11 @@ impl Interpreter {
                 match op {
                     UnaryOperator::Negate => match x {
                         Value::Number(n) => Ok(Value::Number(-n)),
-                        x => Err(ExecutionError::InvalidNegate(x, Value::Nil)),
+                        x => Err(ExecutionErrorKind::InvalidNegate(x, Value::Nil)),
                     },
                     UnaryOperator::Not => match x {
                         Value::Boolean(b) => Ok(Value::Boolean(!b)),
-                        x => Err(ExecutionError::InvalidNot(x)),
+                        x => Err(ExecutionErrorKind::InvalidNot(x)),
                     },
                 }
             }
@@ -295,11 +288,11 @@ impl Interpreter {
                 self.environment
                     .assign_variable(name, &value)
                     .cloned()
-                    .ok_or_else(|| ExecutionError::UndeclaredVariable(name.clone()))
+                    .ok_or_else(|| ExecutionErrorKind::UndeclaredVariable(name.clone()))
             }
             Expression::Call(expr, args) => {
                 let Expression::Identifier(name) = expr.as_ref() else {
-                    return Err(ExecutionError::InvalidFunctionCall(
+                    return Err(ExecutionErrorKind::InvalidFunctionCall(
                         "not an identifier".to_string(),
                         0,
                         0,
@@ -309,11 +302,11 @@ impl Interpreter {
                 let callable = self
                     .environment
                     .get_callable(name)
-                    .ok_or_else(|| ExecutionError::UndeclaredFunction(name.clone()))?
+                    .ok_or_else(|| ExecutionErrorKind::UndeclaredFunction(name.clone()))?
                     .clone();
 
                 if args.len() != callable.arity() {
-                    return Err(ExecutionError::InvalidFunctionCall(
+                    return Err(ExecutionErrorKind::InvalidFunctionCall(
                         name.clone(),
                         args.len(),
                         callable.arity(),
@@ -340,7 +333,7 @@ fn is_truthy(value: &Value) -> bool {
 #[derive(Debug, Clone)]
 enum Callable {
     Function(Vec<String>, Statement),
-    Builtin(fn(&[Value]) -> Result<Value, ExecutionError>, usize),
+    Builtin(fn(&[Value]) -> Result<Value, ExecutionErrorKind>, usize),
 }
 
 impl Callable {
@@ -348,7 +341,7 @@ impl Callable {
         &self,
         interpreter: &mut Interpreter,
         args: &[Expression],
-    ) -> Result<Value, ExecutionError> {
+    ) -> Result<Value, ExecutionErrorKind> {
         match self {
             Callable::Function(arg_names, body) => {
                 interpreter.environment.push(true);

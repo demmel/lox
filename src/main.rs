@@ -7,7 +7,7 @@ mod tokenizer;
 use std::io::Write;
 
 use clap::{Args, Parser, Subcommand};
-use interpreter::InterpretError;
+use interpreter::ExecutionError;
 use justerror::Error;
 
 use crate::interpreter::Interpreter;
@@ -62,7 +62,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[Error]
 enum ReplCommandError {
     Io(#[from] std::io::Error),
-    Interpret(#[from] interpreter::InterpretError),
+    Parse(#[from] parser::ParseErrors),
+    Tokenize(#[from] tokenizer::TokenizeError),
+    Interpret(#[from] interpreter::ExecutionError),
 }
 
 fn repl_command() -> Result<(), ReplCommandError> {
@@ -82,8 +84,10 @@ fn repl_command() -> Result<(), ReplCommandError> {
             break;
         }
 
-        let trimmed_input = input.trim();
-        match interpreter.interpret(&trimmed_input) {
+        let source = input.trim();
+        let tokens = tokenizer::tokens(source)?;
+        let program = parser::program(&tokens)?;
+        match interpreter.interpret(&program) {
             Ok(()) => {}
             Err(e) => {
                 println!("Error: {}", e)
@@ -98,13 +102,17 @@ fn repl_command() -> Result<(), ReplCommandError> {
 #[Error]
 enum RuncCommandError {
     Io(#[from] std::io::Error),
-    Interpret(#[from] InterpretError),
+    Tokenize(#[from] tokenizer::TokenizeError),
+    Parse(#[from] parser::ParseErrors),
+    Interpret(#[from] ExecutionError),
 }
 
 fn run_command(args: &RunArgs) -> Result<(), RuncCommandError> {
-    let file = std::fs::read_to_string(&args.file)?;
+    let source = std::fs::read_to_string(&args.file)?;
+    let tokens = tokenizer::tokens(&source)?;
+    let program = parser::program(&tokens)?;
     let mut interpreter = Interpreter::new();
-    if let Err(e) = interpreter.interpret(&file) {
+    if let Err(e) = interpreter.interpret(&program) {
         println!("{e}");
     }
     Ok(())
