@@ -166,11 +166,11 @@ fn var_declaration<'a>(
 ) -> Result<(Statement, &'a [Token]), ParseErrorWithContext> {
     let _guard = context.push("var_declaration");
     let (name, tokens) = match_identifier(context, tokens)?;
-    let (expr, rest) = match tokens.get(1).map(Token::token_type) {
-        Some(TokenType::Equal) => expression(context, &tokens[2..])?,
-        _ => (Expression::Literal(Literal::Nil), &tokens[1..]),
+    let (expr, tokens) = match tokens.first().map(Token::token_type) {
+        Some(TokenType::Equal) => expression(context, &tokens[1..])?,
+        _ => (Expression::Literal(Literal::Nil), tokens),
     };
-    let tokens = consume(context, rest, TokenType::Semicolon)?;
+    let tokens = consume(context, tokens, TokenType::Semicolon)?;
     Ok((Statement::VarDeclaration(name, expr), &tokens))
 }
 

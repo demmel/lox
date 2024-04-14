@@ -1,0 +1,7 @@
+fun i_love_lox() {
+    print "I love Lox";    
+}
+
+fun p(str) {
+    print str;
+}
