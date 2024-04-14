@@ -1,10 +1,13 @@
-use core::panic;
-use std::{collections::HashMap, fmt::Display};
+mod environment;
+
+use std::fmt::Display;
 
 use crate::{
     ast::{Expression, InfixOperator, Literal, Statement, UnaryOperator},
     parser, tokenizer,
 };
+
+use self::environment::Environment;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -28,167 +31,8 @@ impl Display for Value {
 }
 
 #[derive(Debug, Clone)]
-enum Callable {
-    Function(Vec<String>, Statement),
-    Builtin(fn(&[Value]) -> Result<Value, ExecutionError>, usize),
-}
-
-impl Callable {
-    fn call(
-        &self,
-        interpreter: &mut Interpreter,
-        args: &[Expression],
-    ) -> Result<Value, ExecutionError> {
-        match self {
-            Callable::Function(arg_names, body) => {
-                interpreter.stack.push(true);
-                for (arg_name, arg_value) in arg_names.iter().zip(args.iter()) {
-                    let arg_value = interpreter.evaluate(arg_value)?;
-                    interpreter
-                        .stack
-                        .declare_variable(arg_name.clone(), arg_value);
-                }
-                let result = interpreter.execute(body)?;
-                interpreter.stack.pop();
-                interpreter.stack.set_returning(false);
-                Ok(result)
-            }
-            Callable::Builtin(f, _) => f(&args
-                .iter()
-                .map(|arg| interpreter.evaluate(arg))
-                .collect::<Result<Vec<_>, _>>()?),
-        }
-    }
-
-    fn arity(&self) -> usize {
-        match self {
-            Callable::Function(args, _) => args.len(),
-            Callable::Builtin(_, arity) => *arity,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct Scope {
-    variables: HashMap<String, Value>,
-    functions: HashMap<String, Callable>,
-    is_function: bool,
-}
-
-impl Scope {
-    fn new(is_function: bool) -> Self {
-        Self {
-            variables: HashMap::new(),
-            functions: HashMap::new(),
-            is_function,
-        }
-    }
-
-    fn get_variable(&self, name: &str) -> Option<&Value> {
-        self.variables.get(name)
-    }
-
-    fn get_function(&self, name: &str) -> Option<&Callable> {
-        self.functions.get(name)
-    }
-
-    fn declare_variable(&mut self, name: String, value: Value) {
-        self.variables.insert(name, value);
-    }
-
-    fn assign_variable<'a>(&'a mut self, name: &str, value: &Value) -> Option<&'a Value> {
-        if let Some(v) = self.variables.get_mut(name) {
-            *v = value.clone();
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    fn declare_function(&mut self, name: &str, callable: Callable) -> Result<(), ExecutionError> {
-        self.functions.insert(name.to_string(), callable);
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-struct Stack {
-    scopes: Vec<Scope>,
-    is_returning: bool,
-}
-
-impl Stack {
-    fn new() -> Self {
-        Self {
-            scopes: vec![Scope::new(false)],
-            is_returning: false,
-        }
-    }
-
-    fn push(&mut self, is_function: bool) {
-        self.scopes.push(Scope::new(is_function));
-    }
-
-    fn pop(&mut self) {
-        self.scopes.pop();
-        if self.scopes.is_empty() {
-            panic!("Popped the last scope");
-        }
-    }
-
-    fn get_variable(&self, name: &str) -> Option<&Value> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(value) = scope.get_variable(name) {
-                return Some(value);
-            }
-        }
-        None
-    }
-
-    fn get_callable(&self, name: &str) -> Option<&Callable> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(value) = scope.get_function(name) {
-                return Some(value);
-            }
-        }
-        None
-    }
-
-    fn declare_variable(&mut self, name: String, value: Value) {
-        self.scopes
-            .last_mut()
-            .unwrap()
-            .declare_variable(name, value);
-    }
-
-    fn assign_variable(&mut self, name: &str, value: &Value) -> Option<&Value> {
-        for scope in self.scopes.iter_mut().rev() {
-            if let Some(v) = scope.assign_variable(name, value) {
-                return Some(v);
-            }
-        }
-        None
-    }
-
-    fn declare_function(&mut self, name: &str, callable: Callable) -> Result<(), ExecutionError> {
-        self.scopes
-            .last_mut()
-            .unwrap()
-            .declare_function(name, callable)
-    }
-
-    fn is_in_function(&self) -> bool {
-        self.scopes.iter().any(|scope| scope.is_function)
-    }
-
-    fn set_returning(&mut self, is_returning: bool) {
-        self.is_returning = is_returning;
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct Interpreter {
-    stack: Stack,
+    environment: Environment,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -225,7 +69,7 @@ pub enum ExecutionError {
 
 impl Interpreter {
     pub fn new() -> Self {
-        let mut stack = Stack::new();
+        let mut stack = Environment::new();
 
         stack
             .declare_function(
@@ -244,7 +88,7 @@ impl Interpreter {
             )
             .expect("Builtin functions should not fail to declare");
 
-        Self { stack }
+        Self { environment: stack }
     }
 
     pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
@@ -280,19 +124,19 @@ impl Interpreter {
             }
             Statement::VarDeclaration(identifier, expression) => {
                 let value = self.evaluate(expression)?;
-                self.stack.declare_variable(identifier.clone(), value);
+                self.environment.declare_variable(identifier.clone(), value);
                 Value::Unit
             }
             Statement::Block(statements) => {
-                self.stack.push(false);
+                self.environment.push(false);
                 let mut res = Value::Unit;
                 for stmt in statements.iter() {
                     res = self.execute(stmt)?;
-                    if self.stack.is_returning {
+                    if self.environment.is_returning() {
                         break;
                     }
                 }
-                self.stack.pop();
+                self.environment.pop();
                 res
             }
             Statement::If(condition, then_branch, else_branch) => {
@@ -309,26 +153,26 @@ impl Interpreter {
                 let mut res = Value::Unit;
                 while is_truthy(&self.evaluate(condition)?) {
                     res = self.execute(body)?;
-                    if self.stack.is_returning {
+                    if self.environment.is_returning() {
                         break;
                     }
                 }
                 res
             }
             Statement::Function(name, args, body) => {
-                self.stack
+                self.environment
                     .declare_function(name, Callable::Function(args.to_vec(), (&**body).clone()))?;
                 Value::Unit
             }
             Statement::Return(expression) => {
-                if !self.stack.is_in_function() {
+                if !self.environment.is_in_function() {
                     return Err(ExecutionError::CannotReturnFromTopLevel);
                 }
                 let mut result = Value::Unit;
                 if let Some(expression) = expression {
                     result = self.evaluate(expression)?;
                 };
-                self.stack.set_returning(true);
+                self.environment.set_returning(true);
                 result
             }
         };
@@ -339,7 +183,7 @@ impl Interpreter {
     fn evaluate(&mut self, expression: &Expression) -> Result<Value, ExecutionError> {
         let res = match expression {
             Expression::Identifier(identifier) => self
-                .stack
+                .environment
                 .get_variable(identifier)
                 .cloned()
                 .ok_or_else(|| ExecutionError::UndeclaredVariable(identifier.clone())),
@@ -448,7 +292,7 @@ impl Interpreter {
             }
             Expression::Assign(name, expr) => {
                 let value = self.evaluate(&expr)?;
-                self.stack
+                self.environment
                     .assign_variable(name, &value)
                     .cloned()
                     .ok_or_else(|| ExecutionError::UndeclaredVariable(name.clone()))
@@ -463,7 +307,7 @@ impl Interpreter {
                 };
 
                 let callable = self
-                    .stack
+                    .environment
                     .get_callable(name)
                     .ok_or_else(|| ExecutionError::UndeclaredFunction(name.clone()))?
                     .clone();
@@ -490,5 +334,46 @@ fn is_truthy(value: &Value) -> bool {
         Value::Nil => false,
         Value::Boolean(b) => *b,
         _ => true,
+    }
+}
+
+#[derive(Debug, Clone)]
+enum Callable {
+    Function(Vec<String>, Statement),
+    Builtin(fn(&[Value]) -> Result<Value, ExecutionError>, usize),
+}
+
+impl Callable {
+    fn call(
+        &self,
+        interpreter: &mut Interpreter,
+        args: &[Expression],
+    ) -> Result<Value, ExecutionError> {
+        match self {
+            Callable::Function(arg_names, body) => {
+                interpreter.environment.push(true);
+                for (arg_name, arg_value) in arg_names.iter().zip(args.iter()) {
+                    let arg_value = interpreter.evaluate(arg_value)?;
+                    interpreter
+                        .environment
+                        .declare_variable(arg_name.clone(), arg_value);
+                }
+                let result = interpreter.execute(body)?;
+                interpreter.environment.pop();
+                interpreter.environment.set_returning(false);
+                Ok(result)
+            }
+            Callable::Builtin(f, _) => f(&args
+                .iter()
+                .map(|arg| interpreter.evaluate(arg))
+                .collect::<Result<Vec<_>, _>>()?),
+        }
+    }
+
+    fn arity(&self) -> usize {
+        match self {
+            Callable::Function(args, _) => args.len(),
+            Callable::Builtin(_, arity) => *arity,
+        }
     }
 }
