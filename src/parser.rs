@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use crate::{
     ast::{Expression, InfixOperator, Literal, Program, Statement, UnaryOperator},
     tokenizer::{Token, TokenType},
@@ -27,11 +29,17 @@ impl From<ParseErrorWithContext> for ParseErrors {
 #[derive(Debug)]
 pub struct ParseErrorWithContext {
     pub error: ParseError,
+    context: ParseContext,
     pub token: Option<Token>,
 }
 
 impl std::fmt::Display for ParseErrorWithContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "While parsing {}",
+            self.context.stack.borrow().join(" > ")
+        )?;
         write!(f, "{}", self.error)?;
         if let Some(token) = &self.token {
             write!(
@@ -56,13 +64,54 @@ pub enum ParseError {
     ExpectedIdentifier,
 }
 
+#[derive(Debug, Clone)]
+struct ParseContext {
+    stack: RefCell<Vec<&'static str>>,
+}
+
+impl ParseContext {
+    fn new() -> Self {
+        Self {
+            stack: RefCell::new(vec![""]),
+        }
+    }
+
+    fn push(&self, name: &'static str) -> ParseContextGuard {
+        self.stack.borrow_mut().push(name);
+        ParseContextGuard::new(self)
+    }
+
+    fn pop(&self) {
+        self.stack.borrow_mut().pop();
+    }
+}
+
+struct ParseContextGuard<'a> {
+    context: &'a ParseContext,
+}
+
+impl<'a> ParseContextGuard<'a> {
+    fn new(context: &'a ParseContext) -> Self {
+        Self { context }
+    }
+}
+
+impl<'a> Drop for ParseContextGuard<'a> {
+    fn drop(&mut self) {
+        self.context.pop();
+    }
+}
+
 pub fn program(tokens: &[Token]) -> Result<Program, ParseErrors> {
+    let context = ParseContext::new();
     let mut statments = Vec::new();
     let mut tokens = tokens;
     let mut errors = Vec::new();
 
+    let _guard = context.push("program");
+
     while tokens.len() > 1 {
-        match declaration(tokens) {
+        match declaration(&context, tokens) {
             Ok((stmt, rest)) => {
                 statments.push(stmt);
                 tokens = rest;
@@ -77,6 +126,7 @@ pub fn program(tokens: &[Token]) -> Result<Program, ParseErrors> {
     if tokens.len() == 0 || tokens.len() > 1 || tokens[0].token_type() != &TokenType::Eof {
         errors.push(ParseErrorWithContext {
             error: ParseError::Expected(TokenType::Eof),
+            context: context.clone(),
             token: tokens.first().cloned(),
         });
     }
@@ -99,46 +149,62 @@ fn consume_until_after<'a>(tokens: &'a [Token], token_types: &[TokenType]) -> &'
     tokens
 }
 
-fn declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
+fn declaration<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Statement, &'a [Token]), ParseErrors> {
+    let _guard = context.push("declaration");
     match tokens.first().map(Token::token_type) {
-        Some(TokenType::Var) => Ok(var_declaration(&tokens[1..])?),
-        _ => statement(tokens),
+        Some(TokenType::Var) => Ok(var_declaration(context, &tokens[1..])?),
+        _ => statement(context, tokens),
     }
 }
 
-fn var_declaration(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
-    let (name, tokens) = match_identifier(tokens)?;
+fn var_declaration<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Statement, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("var_declaration");
+    let (name, tokens) = match_identifier(context, tokens)?;
     let (expr, rest) = match tokens.get(1).map(Token::token_type) {
-        Some(TokenType::Equal) => expression(&tokens[2..])?,
+        Some(TokenType::Equal) => expression(context, &tokens[2..])?,
         _ => (Expression::Literal(Literal::Nil), &tokens[1..]),
     };
-    let tokens = consume(rest, TokenType::Semicolon)?;
+    let tokens = consume(context, rest, TokenType::Semicolon)?;
     Ok((Statement::VarDeclaration(name, expr), &tokens))
 }
 
-fn statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
+fn statement<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Statement, &'a [Token]), ParseErrors> {
+    let _guard = context.push("statement");
     match tokens.first().map(Token::token_type) {
-        Some(TokenType::Print) => Ok(print_statement(&tokens[1..])?),
-        Some(TokenType::LeftBrace) => block(&tokens[1..]),
-        Some(TokenType::If) => Ok(if_statement(&tokens[1..])?),
-        Some(TokenType::While) => Ok(while_statement(&tokens[1..])?),
-        Some(TokenType::For) => Ok(for_statement(&tokens[1..])?),
-        Some(TokenType::Fun) => Ok(function(&tokens[1..])?),
-        _ => Ok(expression_statement(tokens)?),
+        Some(TokenType::Print) => Ok(print_statement(context, &tokens[1..])?),
+        Some(TokenType::LeftBrace) => block(context, &tokens[1..]),
+        Some(TokenType::If) => Ok(if_statement(context, &tokens[1..])?),
+        Some(TokenType::While) => Ok(while_statement(context, &tokens[1..])?),
+        Some(TokenType::For) => Ok(for_statement(context, &tokens[1..])?),
+        Some(TokenType::Fun) => Ok(function(context, &tokens[1..])?),
+        _ => Ok(expression_statement(context, tokens)?),
     }
 }
 
-fn function(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
-    let (name, tokens) = match_identifier(tokens)?;
-    let mut tokens = consume(tokens, TokenType::LeftParen)?;
+fn function<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Statement, &'a [Token]), ParseErrors> {
+    let _guard = context.push("function");
+    let (name, tokens) = match_identifier(context, tokens)?;
+    let mut tokens = consume(context, tokens, TokenType::LeftParen)?;
     let mut args = vec![];
     loop {
-        if let Ok(rest) = consume(tokens, TokenType::RightParen) {
+        if let Ok(rest) = consume(context, tokens, TokenType::RightParen) {
             tokens = rest;
             break;
         }
 
-        let (arg_name, rest) = match_identifier(tokens)?;
+        let (arg_name, rest) = match_identifier(context, tokens)?;
         args.push(arg_name);
         tokens = rest;
 
@@ -151,31 +217,40 @@ fn function(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
             _ => {
                 return Err(ParseErrorWithContext {
                     error: ParseError::ExpectedOneOf(vec![TokenType::Comma, TokenType::RightParen]),
+                    context: context.clone(),
                     token: tokens.first().cloned(),
                 }
                 .into())
             }
         }
     }
-    let (body, tokens) = block(tokens)?;
+    let (body, tokens) = block(context, tokens)?;
     Ok((Statement::Function(name, args, Box::new(body)), tokens))
 }
 
-fn while_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
-    let tokens = consume(tokens, TokenType::LeftParen)?;
-    let (condition, tokens) = expression(tokens)?;
-    let tokens = consume(tokens, TokenType::RightParen)?;
-    let (body, tokens) = statement(tokens)?;
+fn while_statement<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Statement, &'a [Token]), ParseErrors> {
+    let _guard = context.push("while_statement");
+    let tokens = consume(context, tokens, TokenType::LeftParen)?;
+    let (condition, tokens) = expression(context, tokens)?;
+    let tokens = consume(context, tokens, TokenType::RightParen)?;
+    let (body, tokens) = statement(context, tokens)?;
     Ok((Statement::While(condition, Box::new(body)), tokens))
 }
 
-fn if_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
-    let tokens = consume(tokens, TokenType::LeftParen)?;
-    let (condition, tokens) = expression(tokens)?;
-    let tokens = consume(tokens, TokenType::RightParen)?;
-    let (then_branch, tokens) = statement(tokens)?;
+fn if_statement<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Statement, &'a [Token]), ParseErrors> {
+    let _guard = context.push("if_statement");
+    let tokens = consume(context, tokens, TokenType::LeftParen)?;
+    let (condition, tokens) = expression(context, tokens)?;
+    let tokens = consume(context, tokens, TokenType::RightParen)?;
+    let (then_branch, tokens) = statement(context, tokens)?;
     if let Some(TokenType::Else) = tokens.first().map(Token::token_type) {
-        let (else_branch, tokens) = statement(&tokens[1..])?;
+        let (else_branch, tokens) = statement(context, &tokens[1..])?;
         Ok((
             Statement::If(
                 condition,
@@ -192,35 +267,39 @@ fn if_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> 
     }
 }
 
-fn for_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
-    let tokens = consume(tokens, TokenType::LeftParen)?;
+fn for_statement<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Statement, &'a [Token]), ParseErrors> {
+    let _guard = context.push("for_statement");
+    let tokens = consume(context, tokens, TokenType::LeftParen)?;
 
     let (initializer, tokens) = match tokens.first().map(Token::token_type) {
         Some(TokenType::Semicolon) => (
             Statement::Expression(Expression::Literal(Literal::Nil)),
             &tokens[1..],
         ),
-        Some(TokenType::Var) => var_declaration(&tokens[1..])?,
-        _ => expression_statement(tokens)?,
+        Some(TokenType::Var) => var_declaration(context, &tokens[1..])?,
+        _ => expression_statement(context, tokens)?,
     };
 
     let (condition, tokens) =
         if tokens.first().map(Token::token_type) != Some(&TokenType::Semicolon) {
-            expression(tokens)?
+            expression(context, tokens)?
         } else {
             (Expression::Literal(Literal::Boolean(true)), tokens)
         };
 
-    let tokens = consume(tokens, TokenType::Semicolon)?;
+    let tokens = consume(context, tokens, TokenType::Semicolon)?;
 
     let (increment, tokens) = match tokens.first().map(Token::token_type) {
         Some(TokenType::RightParen) => (Expression::Literal(Literal::Nil), tokens),
-        _ => expression(tokens)?,
+        _ => expression(context, tokens)?,
     };
 
-    let tokens = consume(tokens, TokenType::RightParen)?;
+    let tokens = consume(context, tokens, TokenType::RightParen)?;
 
-    let (statement, tokens) = statement(tokens)?;
+    let (statement, tokens) = statement(context, tokens)?;
 
     Ok((
         Statement::Block(vec![
@@ -237,7 +316,11 @@ fn for_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors>
     ))
 }
 
-fn block(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
+fn block<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Statement, &'a [Token]), ParseErrors> {
+    let _guard = context.push("block");
     let mut statements = Vec::new();
     let mut tokens = tokens;
     let mut errors = Vec::new();
@@ -247,7 +330,7 @@ fn block(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
             return Ok((Statement::Block(statements), &tokens[1..]));
         }
 
-        match declaration(tokens) {
+        match declaration(context, tokens) {
             Ok((stmt, rest)) => {
                 statements.push(stmt);
                 tokens = rest;
@@ -262,39 +345,57 @@ fn block(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrors> {
 
     errors.push(ParseErrorWithContext {
         error: ParseError::Expected(TokenType::RightBrace),
+        context: context.clone(),
         token: tokens.first().cloned(),
     });
 
     Err(ParseErrors(errors))
 }
 
-fn expression_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
-    let (expr, tokens) = expression(tokens)?;
-    let tokens = consume(tokens, TokenType::Semicolon)?;
+fn expression_statement<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Statement, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("expression_statement");
+    let (expr, tokens) = expression(context, tokens)?;
+    let tokens = consume(context, tokens, TokenType::Semicolon)?;
     Ok((Statement::Expression(expr), &tokens))
 }
 
-fn print_statement(tokens: &[Token]) -> Result<(Statement, &[Token]), ParseErrorWithContext> {
-    let (expr, rest) = expression(tokens)?;
-    let tokens = consume(rest, TokenType::Semicolon)?;
+fn print_statement<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Statement, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("print_statement");
+    let (expr, rest) = expression(context, tokens)?;
+    let tokens = consume(context, rest, TokenType::Semicolon)?;
     Ok((Statement::Print(expr), &tokens))
 }
 
-pub fn expression(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
-    assignment(tokens)
+fn expression<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("expression");
+    assignment(context, tokens)
 }
 
-fn assignment(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
-    let (expr, rest) = logical_or(tokens)?;
+fn assignment<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("assignment");
+    let (expr, rest) = logical_or(context, tokens)?;
 
     match rest.first().map(Token::token_type) {
         Some(TokenType::Equal) => match expr {
             Expression::Identifier(name) => {
-                let (value, rest) = assignment(&rest[1..])?;
+                let (value, rest) = assignment(context, &rest[1..])?;
                 Ok((Expression::Assign(name, Box::new(value)), rest))
             }
             _ => Err(ParseErrorWithContext {
                 error: ParseError::ExpectedIdentifier,
+                context: context.clone(),
                 token: rest.first().cloned(),
             }),
         },
@@ -302,12 +403,16 @@ fn assignment(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWith
     }
 }
 
-fn binary(
-    precedence: impl Fn(&[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext>,
+fn binary<'a>(
+    context: &ParseContext,
+    precedence: impl Fn(
+        &ParseContext,
+        &'a [Token],
+    ) -> Result<(Expression, &'a [Token]), ParseErrorWithContext>,
     operator: impl Fn(&Token) -> Option<InfixOperator>,
-    tokens: &[Token],
-) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
-    let (mut expr, mut tokens) = precedence(tokens)?;
+    tokens: &'a [Token],
+) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    let (mut expr, mut tokens) = precedence(context, tokens)?;
 
     while let Some(token) = tokens.first() {
         let op = match operator(token) {
@@ -315,7 +420,7 @@ fn binary(
             None => break,
         };
         tokens = &tokens[1..];
-        let (right, rest) = precedence(tokens)?;
+        let (right, rest) = precedence(context, tokens)?;
         expr = Expression::Binary(Box::new(expr), op, Box::new(right));
         tokens = rest;
     }
@@ -323,8 +428,13 @@ fn binary(
     Ok((expr, tokens))
 }
 
-fn logical_or(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
+fn logical_or<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("logical_or");
     binary(
+        context,
         logical_and,
         |token| match token.token_type() {
             TokenType::Or => Some(InfixOperator::Or),
@@ -334,8 +444,13 @@ fn logical_or(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWith
     )
 }
 
-fn logical_and(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
+fn logical_and<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("logical_and");
     binary(
+        context,
         equality,
         |token| match token.token_type() {
             TokenType::And => Some(InfixOperator::And),
@@ -345,8 +460,13 @@ fn logical_and(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWit
     )
 }
 
-fn equality(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
+fn equality<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("equality");
     binary(
+        context,
         comparison,
         |token| match token.token_type() {
             TokenType::EqualEqual => Some(InfixOperator::Equal),
@@ -357,8 +477,13 @@ fn equality(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithCo
     )
 }
 
-fn comparison(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
+fn comparison<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("comparison");
     binary(
+        context,
         term,
         |token| match token.token_type() {
             TokenType::Less => Some(InfixOperator::LessThan),
@@ -371,8 +496,13 @@ fn comparison(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWith
     )
 }
 
-fn term(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
+fn term<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("term");
     binary(
+        context,
         factor,
         |token| match token.token_type() {
             TokenType::Plus => Some(InfixOperator::Plus),
@@ -383,8 +513,13 @@ fn term(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContex
     )
 }
 
-fn factor(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
+fn factor<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("factor");
     binary(
+        context,
         unary,
         |token| match token.token_type() {
             TokenType::Star => Some(InfixOperator::Multiply),
@@ -395,21 +530,30 @@ fn factor(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithCont
     )
 }
 
-fn unary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
+fn unary<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("unary");
     let operator = match tokens.first().map(Token::token_type) {
         Some(TokenType::Minus) => UnaryOperator::Negate,
         Some(TokenType::Bang) => UnaryOperator::Not,
-        _ => return primary(tokens),
+        _ => return primary(context, tokens),
     };
 
-    let (right, rest) = unary(&tokens[1..])?;
+    let (right, rest) = unary(context, &tokens[1..])?;
     Ok((Expression::Unary(operator, Box::new(right)), rest))
 }
 
-fn primary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithContext> {
+fn primary<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("primary");
     let Some(token) = tokens.first() else {
         return Err(ParseErrorWithContext {
             error: ParseError::Unexpected(TokenType::Eof),
+            context: context.clone(),
             token: tokens.first().cloned(),
         });
     };
@@ -424,33 +568,43 @@ fn primary(tokens: &[Token]) -> Result<(Expression, &[Token]), ParseErrorWithCon
         TokenType::False => Ok((Expression::Literal(Literal::Boolean(false)), &tokens[1..])),
         TokenType::Nil => Ok((Expression::Literal(Literal::Nil), &tokens[1..])),
         TokenType::LeftParen => {
-            let (expr, rest) = expression(&tokens[1..])?;
-            let tokens = consume(rest, TokenType::RightParen)?;
+            let (expr, rest) = expression(context, &tokens[1..])?;
+            let tokens = consume(context, rest, TokenType::RightParen)?;
             Ok((Expression::Grouping(Box::new(expr)), tokens))
         }
         TokenType::Identifier(name) => Ok((Expression::Identifier(name.clone()), &tokens[1..])),
         token_type => Err(ParseErrorWithContext {
             error: ParseError::Unexpected(token_type.clone()),
+            context: context.clone(),
             token: tokens.first().cloned(),
         }),
     }
 }
 
-fn consume(tokens: &[Token], token_type: TokenType) -> Result<&[Token], ParseErrorWithContext> {
+fn consume<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+    token_type: TokenType,
+) -> Result<&'a [Token], ParseErrorWithContext> {
     match tokens.first().map(Token::token_type) {
         Some(t) if t == &token_type => Ok(&tokens[1..]),
         _ => Err(ParseErrorWithContext {
             error: ParseError::Expected(token_type),
+            context: context.clone(),
             token: tokens.first().cloned(),
         }),
     }
 }
 
-fn match_identifier(tokens: &[Token]) -> Result<(String, &[Token]), ParseErrorWithContext> {
+fn match_identifier<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(String, &'a [Token]), ParseErrorWithContext> {
     match tokens.first().map(Token::token_type) {
         Some(TokenType::Identifier(name)) => Ok((name.clone(), &tokens[1..])),
         _ => Err(ParseErrorWithContext {
             error: ParseError::ExpectedIdentifier,
+            context: context.clone(),
             token: tokens.first().cloned(),
         }),
     }
