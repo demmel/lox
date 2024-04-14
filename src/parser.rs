@@ -570,46 +570,45 @@ fn call<'a>(
     tokens: &'a [Token],
 ) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
     let _guard = context.push("call");
-    let (mut expr, mut tokens) = primary(context, tokens)?;
+    let (expr, mut tokens) = primary(context, tokens)?;
 
-    if let Expression::Identifier(name) = &expr {
-        if let Some(TokenType::LeftParen) = tokens.first().map(Token::token_type) {
-            let mut args = Vec::new();
+    let Expression::Identifier(name) = &expr else {
+        return Ok((expr, tokens));
+    };
+
+    let Some(TokenType::LeftParen) = tokens.first().map(Token::token_type) else {
+        return Ok((expr, tokens));
+    };
+
+    let mut args = Vec::new();
+    tokens = &tokens[1..];
+
+    loop {
+        if tokens.first().map(Token::token_type) == Some(&TokenType::RightParen) {
             tokens = &tokens[1..];
-
-            loop {
-                if tokens.first().map(Token::token_type) == Some(&TokenType::RightParen) {
-                    tokens = &tokens[1..];
-                    break;
-                }
-                let (arg, rest) = expression(context, tokens)?;
-                args.push(arg);
-                tokens = rest;
-                match tokens.first().map(Token::token_type) {
-                    Some(TokenType::Comma) => tokens = &tokens[1..],
-                    Some(TokenType::RightParen) => {
-                        tokens = &tokens[1..];
-                        break;
-                    }
-                    _ => {
-                        return Err(ParseErrorWithContext {
-                            error: ParseError::ExpectedOneOf(vec![
-                                TokenType::Comma,
-                                TokenType::RightParen,
-                            ]),
-                            context: context.clone(),
-                            token: tokens.first().cloned(),
-                        }
-                        .into())
-                    }
-                }
+            break;
+        }
+        let (arg, rest) = expression(context, tokens)?;
+        args.push(arg);
+        tokens = rest;
+        match tokens.first().map(Token::token_type) {
+            Some(TokenType::Comma) => tokens = &tokens[1..],
+            Some(TokenType::RightParen) => {
+                tokens = &tokens[1..];
+                break;
             }
-
-            expr = Expression::FunctionCall(name.clone(), args);
+            _ => {
+                return Err(ParseErrorWithContext {
+                    error: ParseError::ExpectedOneOf(vec![TokenType::Comma, TokenType::RightParen]),
+                    context: context.clone(),
+                    token: tokens.first().cloned(),
+                }
+                .into())
+            }
         }
     }
 
-    Ok((expr, tokens))
+    Ok((Expression::FunctionCall(name.clone(), args), tokens))
 }
 
 fn primary<'a>(
