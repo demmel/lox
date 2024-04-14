@@ -156,6 +156,7 @@ fn declaration<'a>(
     let _guard = context.push("declaration");
     match tokens.first().map(Token::token_type) {
         Some(TokenType::Var) => Ok(var_declaration(context, &tokens[1..])?),
+        Some(TokenType::Fun) => Ok(function(context, &tokens[1..])?),
         _ => statement(context, tokens),
     }
 }
@@ -185,7 +186,6 @@ fn statement<'a>(
         Some(TokenType::If) => Ok(if_statement(context, &tokens[1..])?),
         Some(TokenType::While) => Ok(while_statement(context, &tokens[1..])?),
         Some(TokenType::For) => Ok(for_statement(context, &tokens[1..])?),
-        Some(TokenType::Fun) => Ok(function(context, &tokens[1..])?),
         _ => Ok(expression_statement(context, tokens)?),
     }
 }
@@ -535,14 +535,62 @@ fn unary<'a>(
     tokens: &'a [Token],
 ) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
     let _guard = context.push("unary");
+
     let operator = match tokens.first().map(Token::token_type) {
         Some(TokenType::Minus) => UnaryOperator::Negate,
         Some(TokenType::Bang) => UnaryOperator::Not,
-        _ => return primary(context, tokens),
+        _ => return call(context, tokens),
     };
 
     let (right, rest) = unary(context, &tokens[1..])?;
     Ok((Expression::Unary(operator, Box::new(right)), rest))
+}
+
+fn call<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("call");
+    let (mut expr, mut tokens) = primary(context, tokens)?;
+
+    if let Expression::Identifier(name) = &expr {
+        if let Some(TokenType::LeftParen) = tokens.first().map(Token::token_type) {
+            let mut args = Vec::new();
+            tokens = &tokens[1..];
+
+            loop {
+                if tokens.first().map(Token::token_type) == Some(&TokenType::RightParen) {
+                    tokens = &tokens[1..];
+                    break;
+                }
+                let (arg, rest) = expression(context, tokens)?;
+                args.push(arg);
+                tokens = rest;
+                match tokens.first().map(Token::token_type) {
+                    Some(TokenType::Comma) => tokens = &tokens[1..],
+                    Some(TokenType::RightParen) => {
+                        tokens = &tokens[1..];
+                        break;
+                    }
+                    _ => {
+                        return Err(ParseErrorWithContext {
+                            error: ParseError::ExpectedOneOf(vec![
+                                TokenType::Comma,
+                                TokenType::RightParen,
+                            ]),
+                            context: context.clone(),
+                            token: tokens.first().cloned(),
+                        }
+                        .into())
+                    }
+                }
+            }
+
+            expr = Expression::FunctionCall(name.clone(), args);
+        }
+    }
+
+    Ok((expr, tokens))
 }
 
 fn primary<'a>(

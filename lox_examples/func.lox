@@ -1,7 +1,10 @@
-fun i_love_lox() {
-    print "I love Lox";    
-}
 
 fun p(str) {
     print str;
 }
+
+fun i_love_lox() {
+   p("I love lox");
+}
+
+i_love_lox();

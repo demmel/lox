@@ -12,6 +12,7 @@ pub enum Value {
     String(String),
     Boolean(bool),
     Nil,
+    Unit,
 }
 
 impl Display for Value {
@@ -21,6 +22,7 @@ impl Display for Value {
             Value::String(s) => write!(f, "\"{}\"", s),
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Nil => write!(f, "nil"),
+            Value::Unit => write!(f, "()"),
         }
     }
 }
@@ -41,6 +43,10 @@ impl Scope {
 
     fn get_variable(&self, name: &str) -> Option<&Value> {
         self.variables.get(name)
+    }
+
+    fn get_function(&self, name: &str) -> Option<&(Vec<String>, Statement)> {
+        self.functions.get(name)
     }
 
     fn declare_variable(&mut self, name: String, value: Value) {
@@ -94,6 +100,15 @@ impl Stack {
     fn get_variable(&self, name: &str) -> Option<&Value> {
         for scope in self.scopes.iter().rev() {
             if let Some(value) = scope.get_variable(name) {
+                return Some(value);
+            }
+        }
+        None
+    }
+
+    fn get_function(&self, name: &str) -> Option<&(Vec<String>, Statement)> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(value) = scope.get_function(name) {
                 return Some(value);
             }
         }
@@ -161,6 +176,8 @@ pub enum ExecutionError {
     InvalidNegate(Value, Value),
     InvalidNot(Value),
     UndeclaredVariable(String),
+    UndeclaredFunction(String),
+    InvalidFunctionCall(String, usize, usize),
 }
 
 impl Interpreter {
@@ -176,7 +193,7 @@ impl Interpreter {
 
         for stmt in program.0.iter() {
             match self.execute(stmt) {
-                Ok(()) => {}
+                Ok(_) => {}
                 Err(e) => {
                     return Err(InterpretError::Execution {
                         kind: e,
@@ -190,7 +207,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn execute(&mut self, stmt: &Statement) -> Result<(), ExecutionError> {
+    fn execute(&mut self, stmt: &Statement) -> Result<Value, ExecutionError> {
         match stmt {
             Statement::Expression(expression) => {
                 self.evaluate(expression)?;
@@ -227,7 +244,7 @@ impl Interpreter {
                 self.stack.declare_function(name, args, body)?;
             }
         }
-        Ok(())
+        Ok(Value::Unit)
     }
 
     fn evaluate(&mut self, expression: &Expression) -> Result<Value, ExecutionError> {
@@ -346,6 +363,28 @@ impl Interpreter {
                     .assign_variable(name, &value)
                     .cloned()
                     .ok_or_else(|| ExecutionError::UndeclaredVariable(name.clone()))
+            }
+            Expression::FunctionCall(name, args) => {
+                let (arg_names, body) = self
+                    .stack
+                    .get_function(name)
+                    .ok_or_else(|| ExecutionError::UndeclaredFunction(name.clone()))?
+                    .clone();
+                if args.len() != arg_names.len() {
+                    return Err(ExecutionError::InvalidFunctionCall(
+                        name.clone(),
+                        args.len(),
+                        arg_names.len(),
+                    ));
+                }
+                self.stack.push();
+                for (arg_name, arg_value) in arg_names.iter().zip(args.iter()) {
+                    let evaluated_arg = self.evaluate(arg_value)?;
+                    self.stack.declare_variable(arg_name.clone(), evaluated_arg);
+                }
+                let result = self.execute(&body)?;
+                self.stack.pop();
+                Ok(result)
             }
         }
     }

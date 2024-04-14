@@ -22,6 +22,7 @@ pub enum Expression {
     Binary(Box<Expression>, InfixOperator, Box<Expression>),
     Unary(UnaryOperator, Box<Expression>),
     Assign(String, Box<Expression>),
+    FunctionCall(String, Vec<Expression>),
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +112,16 @@ impl Display for Expression {
             Expression::Binary(left, op, right) => write!(f, "({} {} {})", op, left, right),
             Expression::Unary(op, right) => write!(f, "({} {})", op, right),
             Expression::Assign(name, expr) => write!(f, "{} = {}", name, expr),
+            Expression::FunctionCall(name, args) => {
+                write!(f, "{}(", name)?;
+                for (i, arg) in args.iter().enumerate() {
+                    write!(f, "{}", arg)?;
+                    if i != args.len() - 1 {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, ")")
+            }
         }
     }
 }
