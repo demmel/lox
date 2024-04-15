@@ -1,6 +1,10 @@
 mod environment;
 
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::{
+    cell::RefCell,
+    fmt::{Debug, Display},
+    rc::Rc,
+};
 
 use crate::ast::{Expression, InfixOperator, Literal, Program, Statement, UnaryOperator};
 
@@ -27,9 +31,24 @@ impl Display for Value {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Interpreter {
     environment: Environment,
+    stdout: Rc<RefCell<dyn std::io::Write>>,
+}
+
+impl Debug for Interpreter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Interpreter")
+            .field("environment", &self.environment)
+            .finish()
+    }
+}
+
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self::new(Rc::new(RefCell::new(std::io::stdout())))
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -44,6 +63,7 @@ pub enum ExecutionError {
 
 #[justerror::Error]
 pub enum ExecutionErrorKind {
+    IO(#[from] std::io::Error),
     InvalidLess(Value, Value),
     InvalidLessEqual(Value, Value),
     InvalidGreater(Value, Value),
@@ -62,7 +82,7 @@ pub enum ExecutionErrorKind {
 }
 
 impl Interpreter {
-    pub fn new() -> Self {
+    pub fn new(stdout: Rc<RefCell<dyn std::io::Write>>) -> Self {
         let mut stack = Environment::new();
 
         stack
@@ -82,7 +102,10 @@ impl Interpreter {
             )
             .expect("Builtin functions should not fail to declare");
 
-        Self { environment: stack }
+        Self {
+            environment: stack,
+            stdout,
+        }
     }
 
     pub fn interpret(&mut self, program: &Program) -> Result<(), ExecutionError> {
@@ -110,7 +133,7 @@ impl Interpreter {
             }
             Statement::Print(expression) => {
                 let value = self.evaluate(expression)?;
-                println!("{}", value);
+                writeln!(self.stdout.borrow_mut(), "{}", value)?;
                 None
             }
             Statement::VarDeclaration(identifier, expression) => {

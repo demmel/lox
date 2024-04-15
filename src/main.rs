@@ -1,16 +1,9 @@
-mod ast;
-mod interpreter;
-mod parser;
-mod span;
-mod tokenizer;
-
 use std::io::Write;
 
 use clap::{Args, Parser, Subcommand};
-use interpreter::ExecutionError;
 use justerror::Error;
 
-use crate::interpreter::Interpreter;
+use lox::interpreter::Interpreter;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -72,16 +65,16 @@ fn runner() -> Result<(), Box<dyn std::error::Error>> {
 #[Error]
 enum ReplCommandError {
     Io(#[from] std::io::Error),
-    Parse(#[from] parser::ParseErrors),
-    Tokenize(#[from] tokenizer::TokenizeError),
-    Interpret(#[from] interpreter::ExecutionError),
+    Tokenize(#[from] lox::tokenizer::TokenizeError),
+    Parse(#[from] lox::parser::ParseErrors),
+    Interpret(#[from] lox::interpreter::ExecutionError),
 }
 
 fn repl_command() -> Result<(), ReplCommandError> {
     println!("Welcome to the Lox REPL!");
     println!("EOF to exit. (Ctrl+D on *nix, Ctrl+Z on Windows)");
 
-    let mut interpreter = Interpreter::new();
+    let mut interpreter = Interpreter::default();
 
     loop {
         let mut input = String::new();
@@ -95,8 +88,8 @@ fn repl_command() -> Result<(), ReplCommandError> {
         }
 
         let source = input.trim();
-        let tokens = tokenizer::tokens(source)?;
-        let program = parser::program(&tokens)?;
+        let tokens = lox::tokenizer::tokens(source)?;
+        let program = lox::parser::program(&tokens)?;
         match interpreter.interpret(&program) {
             Ok(()) => {}
             Err(e) => {
@@ -112,16 +105,16 @@ fn repl_command() -> Result<(), ReplCommandError> {
 #[Error]
 enum RuncCommandError {
     Io(#[from] std::io::Error),
-    Tokenize(#[from] tokenizer::TokenizeError),
-    Parse(#[from] parser::ParseErrors),
-    Interpret(#[from] ExecutionError),
+    Tokenize(#[from] lox::tokenizer::TokenizeError),
+    Parse(#[from] lox::parser::ParseErrors),
+    Interpret(#[from] lox::interpreter::ExecutionError),
 }
 
 fn run_command(args: &RunArgs) -> Result<(), RuncCommandError> {
     let source = std::fs::read_to_string(&args.file)?;
-    let tokens = tokenizer::tokens(&source)?;
-    let program = parser::program(&tokens)?;
-    let mut interpreter = Interpreter::new();
+    let tokens = lox::tokenizer::tokens(&source)?;
+    let program = lox::parser::program(&tokens)?;
+    let mut interpreter = Interpreter::default();
     if let Err(e) = interpreter.interpret(&program) {
         println!("{e}");
     }
@@ -130,8 +123,8 @@ fn run_command(args: &RunArgs) -> Result<(), RuncCommandError> {
 
 fn expand_command(args: &ExpandArgs) -> Result<(), Box<dyn std::error::Error>> {
     let file = std::fs::read_to_string(&args.file)?;
-    let tokens = tokenizer::tokens(&file)?;
-    let ast = parser::program(&tokens)?;
+    let tokens = lox::tokenizer::tokens(&file)?;
+    let ast = lox::parser::program(&tokens)?;
     println!("{}", ast);
     Ok(())
 }
