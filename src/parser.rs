@@ -215,34 +215,8 @@ fn function_declaration<'a>(
 ) -> Result<(Statement, &'a [Token]), ParseErrors> {
     let _guard = context.push("function");
     let (name, tokens) = match_identifier(context, tokens)?;
-    let mut tokens = consume(context, tokens, TokenType::LeftParen)?;
-    let mut args = vec![];
-    loop {
-        if let Ok(rest) = consume(context, tokens, TokenType::RightParen) {
-            tokens = rest;
-            break;
-        }
-
-        let (arg_name, rest) = match_identifier(context, tokens)?;
-        args.push(arg_name);
-        tokens = rest;
-
-        match tokens.first().map(Token::token_type) {
-            Some(TokenType::Comma) => tokens = &tokens[1..],
-            Some(TokenType::RightParen) => {
-                tokens = &tokens[1..];
-                break;
-            }
-            _ => {
-                return Err(ParseErrorWithContext {
-                    error: ParseError::ExpectedOneOf(vec![TokenType::Comma, TokenType::RightParen]),
-                    context: context.clone(),
-                    token: tokens.first().cloned(),
-                }
-                .into())
-            }
-        }
-    }
+    let tokens = consume(context, tokens, TokenType::LeftParen)?;
+    let (args, tokens) = parameter_list(tokens, context, match_identifier)?;
     let tokens = consume(context, tokens, TokenType::LeftBrace)?;
     let (body, tokens) = block(context, tokens)?;
     Ok((
@@ -582,7 +556,14 @@ fn call<'a>(
         Some(TokenType::LeftParen)
     ) {
         tokens = &tokens[1..];
-        let (args, rest) = arguments(context, tokens)?;
+        let (args, rest) = parameter_list(tokens, context, expression)?;
+        if args.len() > 255 {
+            return Err(ParseErrorWithContext {
+                error: ParseError::TooManyArguments,
+                context: context.clone(),
+                token: tokens.first().cloned(),
+            });
+        }
         tokens = rest;
         expr = Expression::Call(Box::new(expr), args);
     }
@@ -590,19 +571,18 @@ fn call<'a>(
     Ok((expr, tokens))
 }
 
-fn arguments<'a>(
+fn parameter_list<'a, T>(
+    mut tokens: &'a [Token],
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Vec<Expression>, &'a [Token]), ParseErrorWithContext> {
-    let _guard = context.push("arguments");
+    per_arg: impl Fn(&ParseContext, &'a [Token]) -> Result<(T, &'a [Token]), ParseErrorWithContext>,
+) -> Result<(Vec<T>, &'a [Token]), ParseErrorWithContext> {
     let mut args = Vec::new();
-    let mut tokens = tokens;
     loop {
         if tokens.first().map(Token::token_type) == Some(&TokenType::RightParen) {
             tokens = &tokens[1..];
             break;
         }
-        let (arg, rest) = expression(context, tokens)?;
+        let (arg, rest) = per_arg(context, tokens)?;
         args.push(arg);
         tokens = rest;
         match tokens.first().map(Token::token_type) {
@@ -619,14 +599,6 @@ fn arguments<'a>(
                 });
             }
         }
-    }
-    if args.len() > 255 {
-        return Err(ParseErrorWithContext {
-            error: ParseError::TooManyArguments,
-            context: context.clone(),
-            token: tokens.first().cloned(),
-        }
-        .into());
     }
     Ok((args, tokens))
 }
