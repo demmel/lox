@@ -178,7 +178,10 @@ impl Interpreter {
         let res = match expression {
             Expression::Identifier(identifier) => match self.environment.get(identifier) {
                 Some(Declarable::Variable(v)) => Ok(v.clone()),
-                _ => return Err(ExecutionErrorKind::UndeclaredVariable(identifier.clone())),
+                Some(Declarable::Function(_)) => {
+                    Ok(Value::String(format!("<function {}>", identifier)))
+                }
+                _ => Err(ExecutionErrorKind::UndeclaredVariable(identifier.clone())),
             },
             Expression::Literal(literal) => match literal {
                 Literal::Number(n) => Ok(Value::Number(*n)),
