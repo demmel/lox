@@ -100,29 +100,29 @@ impl Interpreter {
         Ok(())
     }
 
-    fn execute(&mut self, stmt: &Statement) -> Result<Value, ExecutionErrorKind> {
+    fn execute(&mut self, stmt: &Statement) -> Result<Option<Value>, ExecutionErrorKind> {
         let result = match stmt {
             Statement::Expression(expression) => {
                 self.evaluate(expression)?;
-                Value::Nil
+                None
             }
             Statement::Print(expression) => {
                 let value = self.evaluate(expression)?;
                 println!("{}", value);
-                Value::Nil
+                None
             }
             Statement::VarDeclaration(identifier, expression) => {
                 let value = self.evaluate(expression)?;
                 self.environment
                     .declare(identifier.clone(), Declarable::Variable(value))?;
-                Value::Nil
+                None
             }
             Statement::Block(statements) => {
                 self.environment.push(false);
-                let mut res = Value::Nil;
+                let mut res = None;
                 for stmt in statements.iter() {
                     res = self.execute(stmt)?;
-                    if self.environment.is_returning() {
+                    if res.is_some() {
                         break;
                     }
                 }
@@ -136,14 +136,14 @@ impl Interpreter {
                 } else if let Some(else_branch) = else_branch {
                     self.execute(else_branch)?
                 } else {
-                    Value::Nil
+                    None
                 }
             }
             Statement::While(condition, body) => {
-                let mut res = Value::Nil;
+                let mut res = None;
                 while is_truthy(&self.evaluate(condition)?) {
                     res = self.execute(body)?;
-                    if self.environment.is_returning() {
+                    if res.is_some() {
                         break;
                     }
                 }
@@ -154,17 +154,16 @@ impl Interpreter {
                     name.clone(),
                     Declarable::Function(Callable::Function(args.to_vec(), (&**body).clone())),
                 )?;
-                Value::Nil
+                None
             }
             Statement::Return(expression) => {
                 if !self.environment.is_in_function() {
                     return Err(ExecutionErrorKind::CannotReturnFromTopLevel);
                 }
-                let mut result = Value::Nil;
+                let mut result = Some(Value::Nil);
                 if let Some(expression) = expression {
-                    result = self.evaluate(expression)?;
+                    result = Some(self.evaluate(expression)?);
                 };
-                self.environment.set_returning(true);
                 result
             }
         };
@@ -353,8 +352,7 @@ impl Callable {
                 }
                 let result = interpreter.execute(body)?;
                 interpreter.environment.pop();
-                interpreter.environment.set_returning(false);
-                Ok(result)
+                Ok(result.expect("Function should return a value"))
             }
             Callable::Builtin(f, _) => f(&args
                 .iter()

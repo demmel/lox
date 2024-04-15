@@ -56,14 +56,12 @@ impl Scope {
 #[derive(Debug, Clone)]
 pub struct Environment {
     stack: Vec<Scope>,
-    is_returning: bool,
 }
 
 impl Environment {
     pub fn new() -> Self {
         Self {
             stack: vec![Scope::new(false)],
-            is_returning: false,
         }
     }
 
@@ -106,13 +104,5 @@ impl Environment {
 
     pub fn is_in_function(&self) -> bool {
         self.stack.iter().any(|scope| scope.is_function)
-    }
-
-    pub fn is_returning(&self) -> bool {
-        self.is_returning
-    }
-
-    pub fn set_returning(&mut self, is_returning: bool) {
-        self.is_returning = is_returning;
     }
 }
