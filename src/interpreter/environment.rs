@@ -1,4 +1,8 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+    cell::RefCell,
+    collections::{hash_map::Entry, HashMap},
+    rc::Rc,
+};
 
 use super::{Callable, ExecutionErrorKind, Value};
 
@@ -11,19 +15,27 @@ pub enum Declarable {
 #[derive(Debug, Clone)]
 struct Scope {
     declarables: HashMap<String, Declarable>,
+    parent: Option<Rc<RefCell<Scope>>>,
     is_function: bool,
 }
 
 impl Scope {
-    fn new(is_function: bool) -> Self {
+    fn new(parent: Option<Rc<RefCell<Scope>>>, is_function: bool) -> Self {
         Self {
             declarables: HashMap::new(),
+            parent,
             is_function,
         }
     }
 
-    fn get(&self, name: &str) -> Option<&Declarable> {
-        self.declarables.get(name)
+    fn get(&self, name: &str) -> Option<Declarable> {
+        if let Some(declarable) = self.declarables.get(name) {
+            return Some(declarable.clone());
+        } else if let Some(parent) = &self.parent {
+            parent.borrow().get(name).clone()
+        } else {
+            None
+        }
     }
 
     fn declare(&mut self, name: String, declarable: Declarable) -> Result<(), ExecutionErrorKind> {
@@ -43,46 +55,55 @@ impl Scope {
         }
     }
 
-    fn assign_variable<'a>(&'a mut self, name: &str, value: &Value) -> Option<&'a Value> {
-        if let Some(Declarable::Variable(v)) = self.declarables.get_mut(name) {
-            *v = value.clone();
-            Some(v)
-        } else {
-            None
+    fn assign_variable<'a>(&'a mut self, name: &str, value: &Value) -> Option<Value> {
+        if let Some(declarable) = self.declarables.get_mut(name) {
+            if let Declarable::Variable(v) = declarable {
+                *v = value.clone();
+                return Some(v.clone());
+            }
+        } else if let Some(parent) = &self.parent {
+            return parent.borrow_mut().assign_variable(name, value);
         }
+        None
+    }
+
+    fn is_in_function(&self) -> bool {
+        self.is_function
+            || self
+                .parent
+                .as_ref()
+                .map_or(false, |p| p.borrow().is_in_function())
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Environment {
-    stack: Vec<Scope>,
+    current: Rc<RefCell<Scope>>,
 }
 
 impl Environment {
     pub fn new() -> Self {
         Self {
-            stack: vec![Scope::new(false)],
+            current: Rc::new(RefCell::new(Scope::new(None, false))),
         }
     }
 
     pub fn push(&mut self, is_function: bool) {
-        self.stack.push(Scope::new(is_function));
+        let new_scope = Scope::new(Some(self.current.clone()), is_function);
+        self.current = Rc::new(RefCell::new(new_scope));
     }
 
     pub fn pop(&mut self) {
-        self.stack.pop();
-        if self.stack.is_empty() {
-            panic!("Popped the last scope");
+        let parent = self.current.borrow().parent.clone();
+        if let Some(p) = parent {
+            self.current = p;
+        } else {
+            panic!("Cannot pop the global scope!");
         }
     }
 
-    pub fn get(&self, name: &str) -> Option<&Declarable> {
-        for scope in self.stack.iter().rev() {
-            if let Some(value) = scope.get(name) {
-                return Some(value);
-            }
-        }
-        None
+    pub fn get(&self, name: &str) -> Option<Declarable> {
+        self.current.borrow().get(name)
     }
 
     pub fn declare(
@@ -90,19 +111,14 @@ impl Environment {
         name: String,
         declarable: Declarable,
     ) -> Result<(), ExecutionErrorKind> {
-        self.stack.last_mut().unwrap().declare(name, declarable)
+        self.current.borrow_mut().declare(name, declarable)
     }
 
-    pub fn assign_variable(&mut self, name: &str, value: &Value) -> Option<&Value> {
-        for scope in self.stack.iter_mut().rev() {
-            if let Some(v) = scope.assign_variable(name, value) {
-                return Some(v);
-            }
-        }
-        None
+    pub fn assign_variable(&mut self, name: &str, value: &Value) -> Option<Value> {
+        self.current.borrow_mut().assign_variable(name, value)
     }
 
     pub fn is_in_function(&self) -> bool {
-        self.stack.iter().any(|scope| scope.is_function)
+        self.current.borrow().is_in_function()
     }
 }

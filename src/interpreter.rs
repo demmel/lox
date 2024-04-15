@@ -287,7 +287,6 @@ impl Interpreter {
                 let value = self.evaluate(&expr)?;
                 self.environment
                     .assign_variable(name, &value)
-                    .cloned()
                     .ok_or_else(|| ExecutionErrorKind::UndeclaredVariable(name.clone()))
             }
             Expression::Call(expr, args) => {
