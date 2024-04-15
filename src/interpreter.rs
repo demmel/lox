@@ -11,6 +11,7 @@ pub enum Value {
     Number(f64),
     String(String),
     Boolean(bool),
+    Closure(Callable),
     Nil,
 }
 
@@ -20,6 +21,7 @@ impl Display for Value {
             Value::Number(n) => write!(f, "{}", n),
             Value::String(s) => write!(f, "\"{}\"", s),
             Value::Boolean(b) => write!(f, "{}", b),
+            Value::Closure(c) => write!(f, "<function {}>", c.arity()),
             Value::Nil => write!(f, "nil"),
         }
     }
@@ -182,9 +184,7 @@ impl Interpreter {
         let res = match expression {
             Expression::Identifier(identifier) => match self.environment.get(identifier) {
                 Some(Declarable::Variable(v)) => Ok(v.clone()),
-                Some(Declarable::Function(_)) => {
-                    Ok(Value::String(format!("<function {}>", identifier)))
-                }
+                Some(Declarable::Function(c)) => Ok(Value::Closure(c.clone())),
                 _ => Err(ExecutionErrorKind::UndeclaredVariable(identifier.clone())),
             },
             Expression::Literal(literal) => match literal {
@@ -307,6 +307,7 @@ impl Interpreter {
 
                 let callable = match self.environment.get(name) {
                     Some(Declarable::Function(callable)) => callable.clone(),
+                    Some(Declarable::Variable(Value::Closure(callable))) => callable.clone(),
                     _ => return Err(ExecutionErrorKind::UndeclaredFunction(name.clone())),
                 };
 
@@ -336,7 +337,7 @@ fn is_truthy(value: &Value) -> bool {
 }
 
 #[derive(Debug, Clone)]
-enum Callable {
+pub enum Callable {
     Function(Rc<RefCell<Scope>>, Vec<String>, Statement),
     Builtin(fn(&[Value]) -> Result<Value, ExecutionErrorKind>, usize),
 }
@@ -358,9 +359,9 @@ impl Callable {
                         .environment
                         .declare(arg_name.clone(), Declarable::Variable(arg_value))?;
                 }
-                let result = interpreter.execute(body)?;
+                let result = interpreter.execute(body)?.unwrap_or(Value::Nil);
                 interpreter.environment.pop();
-                Ok(result.expect("Function should return a value"))
+                Ok(result)
             }
             Callable::Builtin(f, _) => f(&args
                 .iter()
