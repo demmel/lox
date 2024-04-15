@@ -1,33 +1,12 @@
-// We can do memoization!...
-var fib10_check = 10;
-var fib10 = -1;
-var fib11_check = 11;
-var fib11 = -1;
-
 fun fib(n) {
-    if (n == fib11_check and fib11 != -1) {
-        return fib11;
-    }
-    if (n == fib10_check and fib10 != -1) {
-        return fib10;
-    }
-
     if (n <= 1) return 1;
     var ret = fib(n-1) + fib(n-2);
-
-    if (n == fib11_check) {
-        fib11 = ret;
-    }
-    if (n == fib10_check) {
-        fib10 = ret;
-    }
-
     return ret;
 }
 
 var start = clock();
 
-for (var i = 0; i < 31; i = i + 1) {
+for (var i = 0; i < 22; i = i + 1) {
     print fib(i);
 }
 

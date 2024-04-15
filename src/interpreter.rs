@@ -1,10 +1,10 @@
 mod environment;
 
-use std::fmt::Display;
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use crate::ast::{Expression, InfixOperator, Literal, Program, Statement, UnaryOperator};
 
-use self::environment::{Declarable, Environment};
+use self::environment::{Declarable, Environment, Scope};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -32,7 +32,7 @@ pub struct Interpreter {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutionError {
-    #[error("Error executing statement: {current_statement} - {kind:?}")]
+    #[error("Error executing statement: {current_statement} - {kind:?}\n{interpreter:#?}")]
     Execution {
         kind: ExecutionErrorKind,
         interpreter: Interpreter,
@@ -118,7 +118,10 @@ impl Interpreter {
                 None
             }
             Statement::Block(statements) => {
-                self.environment.push(false);
+                self.environment.push(Rc::new(RefCell::new(Scope::new(
+                    Some(self.environment.current().clone()),
+                    false,
+                ))));
                 let mut res = None;
                 for stmt in statements.iter() {
                     res = self.execute(stmt)?;
@@ -152,7 +155,11 @@ impl Interpreter {
             Statement::FunctionDeclaration(name, args, body) => {
                 self.environment.declare(
                     name.clone(),
-                    Declarable::Function(Callable::Function(args.to_vec(), (&**body).clone())),
+                    Declarable::Function(Callable::Function(
+                        self.environment.current().clone(),
+                        args.to_vec(),
+                        (&**body).clone(),
+                    )),
                 )?;
                 None
             }
@@ -330,7 +337,7 @@ fn is_truthy(value: &Value) -> bool {
 
 #[derive(Debug, Clone)]
 enum Callable {
-    Function(Vec<String>, Statement),
+    Function(Rc<RefCell<Scope>>, Vec<String>, Statement),
     Builtin(fn(&[Value]) -> Result<Value, ExecutionErrorKind>, usize),
 }
 
@@ -341,8 +348,10 @@ impl Callable {
         args: &[Expression],
     ) -> Result<Value, ExecutionErrorKind> {
         match self {
-            Callable::Function(arg_names, body) => {
-                interpreter.environment.push(true);
+            Callable::Function(scope, arg_names, body) => {
+                interpreter
+                    .environment
+                    .push(Rc::new(RefCell::new(Scope::new(Some(scope.clone()), true))));
                 for (arg_name, arg_value) in arg_names.iter().zip(args.iter()) {
                     let arg_value = interpreter.evaluate(arg_value)?;
                     interpreter
@@ -362,7 +371,7 @@ impl Callable {
 
     fn arity(&self) -> usize {
         match self {
-            Callable::Function(args, _) => args.len(),
+            Callable::Function(_, args, _) => args.len(),
             Callable::Builtin(_, arity) => *arity,
         }
     }

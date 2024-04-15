@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     collections::{hash_map::Entry, HashMap},
+    fmt::Debug,
     rc::Rc,
 };
 
@@ -12,15 +13,15 @@ pub enum Declarable {
     Function(Callable),
 }
 
-#[derive(Debug, Clone)]
-struct Scope {
+#[derive(Clone)]
+pub struct Scope {
     declarables: HashMap<String, Declarable>,
     parent: Option<Rc<RefCell<Scope>>>,
     is_function: bool,
 }
 
 impl Scope {
-    fn new(parent: Option<Rc<RefCell<Scope>>>, is_function: bool) -> Self {
+    pub fn new(parent: Option<Rc<RefCell<Scope>>>, is_function: bool) -> Self {
         Self {
             declarables: HashMap::new(),
             parent,
@@ -76,34 +77,76 @@ impl Scope {
     }
 }
 
-#[derive(Debug, Clone)]
+impl Debug for Scope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Scope")
+            .field(
+                "declarables",
+                &self
+                    .declarables
+                    .iter()
+                    .map(|(name, declarable)| {
+                        (
+                            name.clone(),
+                            match declarable {
+                                Declarable::Variable(v) => v.clone().to_string(),
+                                Declarable::Function(f) => match f {
+                                    Callable::Function(scope, args, statement) => {
+                                        format!(
+                                            "Function<{:?}>({:?}){}",
+                                            scope.as_ptr(),
+                                            args,
+                                            statement
+                                        )
+                                    }
+                                    Callable::Builtin(closure, arity) => {
+                                        format!("Builtin<{:?}>({})", closure, arity)
+                                    }
+                                },
+                            },
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .field("parent", &self.parent.as_ref().map(|p| p.as_ptr()))
+            .field("is_function", &self.is_function)
+            .finish()
+    }
+}
+
+#[derive(Clone)]
 pub struct Environment {
-    current: Rc<RefCell<Scope>>,
+    stack: Vec<Rc<RefCell<Scope>>>,
 }
 
 impl Environment {
     pub fn new() -> Self {
         Self {
-            current: Rc::new(RefCell::new(Scope::new(None, false))),
+            stack: vec![Rc::new(RefCell::new(Scope::new(None, false)))],
         }
     }
 
-    pub fn push(&mut self, is_function: bool) {
-        let new_scope = Scope::new(Some(self.current.clone()), is_function);
-        self.current = Rc::new(RefCell::new(new_scope));
+    pub fn current(&self) -> &Rc<RefCell<Scope>> {
+        &self.stack.last().unwrap()
+    }
+
+    pub fn push(&mut self, scope: Rc<RefCell<Scope>>) {
+        self.stack.push(scope);
     }
 
     pub fn pop(&mut self) {
-        let parent = self.current.borrow().parent.clone();
-        if let Some(p) = parent {
-            self.current = p;
+        if self.stack.len() > 1 {
+            self.stack.pop();
         } else {
             panic!("Cannot pop the global scope!");
         }
     }
 
     pub fn get(&self, name: &str) -> Option<Declarable> {
-        self.current.borrow().get(name)
+        self.stack
+            .iter()
+            .rev()
+            .find_map(|s| s.borrow().get(name).clone())
     }
 
     pub fn declare(
@@ -111,14 +154,25 @@ impl Environment {
         name: String,
         declarable: Declarable,
     ) -> Result<(), ExecutionErrorKind> {
-        self.current.borrow_mut().declare(name, declarable)
+        self.current().borrow_mut().declare(name, declarable)
     }
 
     pub fn assign_variable(&mut self, name: &str, value: &Value) -> Option<Value> {
-        self.current.borrow_mut().assign_variable(name, value)
+        self.stack
+            .iter_mut()
+            .rev()
+            .find_map(|s| s.borrow_mut().assign_variable(name, value))
     }
 
     pub fn is_in_function(&self) -> bool {
-        self.current.borrow().is_in_function()
+        self.stack.iter().any(|s| s.borrow().is_in_function())
+    }
+}
+
+impl Debug for Environment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list()
+            .entries(self.stack.iter().map(|s| (s.as_ptr(), s.borrow())))
+            .finish()
     }
 }
