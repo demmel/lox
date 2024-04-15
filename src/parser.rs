@@ -557,13 +557,6 @@ fn call<'a>(
     ) {
         tokens = &tokens[1..];
         let (args, rest) = parameter_list(tokens, context, expression)?;
-        if args.len() > 255 {
-            return Err(ParseErrorWithContext {
-                error: ParseError::TooManyArguments,
-                context: context.clone(),
-                token: tokens.first().cloned(),
-            });
-        }
         tokens = rest;
         expr = Expression::Call(Box::new(expr), args);
     }
@@ -599,6 +592,13 @@ fn parameter_list<'a, T>(
                 });
             }
         }
+    }
+    if args.len() > 255 {
+        return Err(ParseErrorWithContext {
+            error: ParseError::TooManyArguments,
+            context: context.clone(),
+            token: tokens.first().cloned(),
+        });
     }
     Ok((args, tokens))
 }
