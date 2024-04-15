@@ -12,7 +12,6 @@ pub enum Value {
     String(String),
     Boolean(bool),
     Nil,
-    Unit,
 }
 
 impl Display for Value {
@@ -22,7 +21,6 @@ impl Display for Value {
             Value::String(s) => write!(f, "\"{}\"", s),
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Nil => write!(f, "nil"),
-            Value::Unit => write!(f, "()"),
         }
     }
 }
@@ -106,22 +104,22 @@ impl Interpreter {
         let result = match stmt {
             Statement::Expression(expression) => {
                 self.evaluate(expression)?;
-                Value::Unit
+                Value::Nil
             }
             Statement::Print(expression) => {
                 let value = self.evaluate(expression)?;
                 println!("{}", value);
-                Value::Unit
+                Value::Nil
             }
             Statement::VarDeclaration(identifier, expression) => {
                 let value = self.evaluate(expression)?;
                 self.environment
                     .declare(identifier.clone(), Declarable::Variable(value))?;
-                Value::Unit
+                Value::Nil
             }
             Statement::Block(statements) => {
                 self.environment.push(false);
-                let mut res = Value::Unit;
+                let mut res = Value::Nil;
                 for stmt in statements.iter() {
                     res = self.execute(stmt)?;
                     if self.environment.is_returning() {
@@ -138,11 +136,11 @@ impl Interpreter {
                 } else if let Some(else_branch) = else_branch {
                     self.execute(else_branch)?
                 } else {
-                    Value::Unit
+                    Value::Nil
                 }
             }
             Statement::While(condition, body) => {
-                let mut res = Value::Unit;
+                let mut res = Value::Nil;
                 while is_truthy(&self.evaluate(condition)?) {
                     res = self.execute(body)?;
                     if self.environment.is_returning() {
@@ -156,13 +154,13 @@ impl Interpreter {
                     name.clone(),
                     Declarable::Function(Callable::Function(args.to_vec(), (&**body).clone())),
                 )?;
-                Value::Unit
+                Value::Nil
             }
             Statement::Return(expression) => {
                 if !self.environment.is_in_function() {
                     return Err(ExecutionErrorKind::CannotReturnFromTopLevel);
                 }
-                let mut result = Value::Unit;
+                let mut result = Value::Nil;
                 if let Some(expression) = expression {
                     result = self.evaluate(expression)?;
                 };
