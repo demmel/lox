@@ -373,14 +373,17 @@ impl Callable {
     ) -> Result<Value, ExecutionErrorKind> {
         match self {
             Callable::Function(scope, arg_names, body) => {
+                let evaluated_args = args
+                    .iter()
+                    .map(|arg| interpreter.evaluate(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
                 interpreter
                     .environment
                     .push(Rc::new(RefCell::new(Scope::new(Some(scope.clone()), true))));
-                for (arg_name, arg_value) in arg_names.iter().zip(args.iter()) {
-                    let arg_value = interpreter.evaluate(arg_value)?;
+                for (arg_name, evaluated_arg) in arg_names.iter().zip(evaluated_args.into_iter()) {
                     interpreter
                         .environment
-                        .declare(arg_name.clone(), Declarable::Variable(arg_value))?;
+                        .declare(arg_name.clone(), Declarable::Variable(evaluated_arg))?;
                 }
                 let result = interpreter.execute(body)?.unwrap_or(Value::Nil);
                 interpreter.environment.pop();

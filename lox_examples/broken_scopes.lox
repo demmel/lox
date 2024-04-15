@@ -1,0 +1,11 @@
+fun i_can_modify_other_scopes() {
+    how_can_you = "malicious";
+}
+
+fun i_just_want_to_live() {
+    var how_can_you = "good";
+    i_can_modify_other_scopes();
+    print how_can_you;
+}
+
+i_just_want_to_live();

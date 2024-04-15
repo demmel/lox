@@ -49,3 +49,20 @@ fn test_closure() {
     let expected_output = "1\n2\n";
     test_valid_program(source, expected_output);
 }
+
+#[test]
+fn test_functions_cant_break_scope() {
+    let source = r#"
+    var a = "global";
+    {
+        fun showA() {
+            print a;
+        }
+        showA(); // global
+        var a = "block";
+        showA(); // global
+    }
+    "#;
+    let expected_output = "\"global\"\n\"global\"\n";
+    test_valid_program(source, expected_output);
+}

@@ -79,7 +79,7 @@ impl Scope {
 
 impl Debug for Scope {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Scope")
+        f.debug_struct(format!("Scope<{:?}>", std::ptr::from_ref(self)).as_str())
             .field(
                 "declarables",
                 &self
@@ -143,10 +143,7 @@ impl Environment {
     }
 
     pub fn get(&self, name: &str) -> Option<Declarable> {
-        self.stack
-            .iter()
-            .rev()
-            .find_map(|s| s.borrow().get(name).clone())
+        self.current().borrow().get(name)
     }
 
     pub fn declare(
@@ -158,14 +155,11 @@ impl Environment {
     }
 
     pub fn assign_variable(&mut self, name: &str, value: &Value) -> Option<Value> {
-        self.stack
-            .iter_mut()
-            .rev()
-            .find_map(|s| s.borrow_mut().assign_variable(name, value))
+        self.current().borrow_mut().assign_variable(name, value)
     }
 
     pub fn is_in_function(&self) -> bool {
-        self.stack.iter().any(|s| s.borrow().is_in_function())
+        self.current().borrow().is_in_function()
     }
 }
 
