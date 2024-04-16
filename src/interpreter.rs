@@ -1,4 +1,4 @@
-mod environment;
+mod scope;
 
 use std::{
     cell::RefCell,
@@ -8,7 +8,7 @@ use std::{
 
 use crate::ast::{Expression, InfixOperator, Literal, Program, Statement, UnaryOperator};
 
-use self::environment::{Declarable, Environment, Scope};
+use self::scope::{Declarable, Scope};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -33,14 +33,14 @@ impl Display for Value {
 
 #[derive(Clone)]
 pub struct Interpreter {
-    environment: Environment,
+    scope: Rc<RefCell<Scope>>,
     stdout: Rc<RefCell<dyn std::io::Write>>,
 }
 
 impl Debug for Interpreter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Interpreter")
-            .field("environment", &self.environment)
+            .field("scope", &self.scope)
             .finish()
     }
 }
@@ -83,9 +83,10 @@ pub enum ExecutionErrorKind {
 
 impl Interpreter {
     pub fn new(stdout: Rc<RefCell<dyn std::io::Write>>) -> Self {
-        let mut stack = Environment::new();
+        let scope = Scope::boxed(None, false);
 
-        stack
+        scope
+            .borrow_mut()
             .declare(
                 "clock".to_string(),
                 Declarable::Function(Callable::Builtin(
@@ -102,10 +103,7 @@ impl Interpreter {
             )
             .expect("Builtin functions should not fail to declare");
 
-        Self {
-            environment: stack,
-            stdout,
-        }
+        Self { scope, stdout }
     }
 
     pub fn interpret(&mut self, program: &Program) -> Result<(), ExecutionError> {
@@ -138,24 +136,21 @@ impl Interpreter {
             }
             Statement::VarDeclaration(identifier, expression) => {
                 let value = self.evaluate(expression)?;
-                self.environment
+                self.scope
+                    .borrow_mut()
                     .declare(identifier.clone(), Declarable::Variable(value))?;
                 None
             }
             Statement::Block(statements) => {
-                self.environment.push(Rc::new(RefCell::new(Scope::new(
-                    Some(self.environment.current().clone()),
-                    false,
-                ))));
-                let mut res = None;
-                for stmt in statements.iter() {
-                    res = self.execute(stmt)?;
-                    if res.is_some() {
-                        break;
+                self.execute_in_scope(Scope::boxed(Some(self.scope.clone()), false), |_self| {
+                    for statement in statements.iter() {
+                        let result = _self.execute(statement)?;
+                        if result.is_some() {
+                            return Ok(result);
+                        }
                     }
-                }
-                self.environment.pop();
-                res
+                    Ok(None)
+                })?
             }
             Statement::If(condition, then_branch, else_branch) => {
                 let condition = self.evaluate(condition)?;
@@ -178,10 +173,10 @@ impl Interpreter {
                 res
             }
             Statement::FunctionDeclaration(name, args, body) => {
-                self.environment.declare(
+                self.scope.borrow_mut().declare(
                     name.clone(),
                     Declarable::Function(Callable::Function(
-                        self.environment.current().clone(),
+                        self.scope.clone(),
                         args.to_vec(),
                         (&**body).clone(),
                     )),
@@ -189,7 +184,7 @@ impl Interpreter {
                 None
             }
             Statement::Return(expression) => {
-                if !self.environment.is_in_function() {
+                if !self.scope.borrow().is_in_function() {
                     return Err(ExecutionErrorKind::CannotReturnFromTopLevel);
                 }
                 let mut result = Some(Value::Nil);
@@ -203,12 +198,23 @@ impl Interpreter {
         Ok(result)
     }
 
+    fn execute_in_scope<T>(
+        &mut self,
+        scope: Rc<RefCell<Scope>>,
+        f: impl FnOnce(&mut Self) -> Result<T, ExecutionErrorKind>,
+    ) -> Result<T, ExecutionErrorKind> {
+        let prev = std::mem::replace(&mut self.scope, scope);
+        let result = f(self);
+        self.scope = prev;
+        result
+    }
+
     fn evaluate(&mut self, expression: &Expression) -> Result<Value, ExecutionErrorKind> {
         let res = match expression {
             Expression::Identifier {
                 name: identifier,
                 scope_depth,
-            } => match self.environment.get_at(*scope_depth, identifier) {
+            } => match Scope::get_at(self.scope.clone(), *scope_depth, identifier) {
                 Some(Declarable::Variable(v)) => Ok(v.clone()),
                 Some(Declarable::Function(c)) => Ok(Value::Closure(c.clone())),
                 _ => Err(ExecutionErrorKind::UndeclaredVariable(identifier.clone())),
@@ -322,8 +328,7 @@ impl Interpreter {
                 scope_depth,
             } => {
                 let value = self.evaluate(&expr)?;
-                self.environment
-                    .assign_at(*scope_depth, name, &value)
+                Scope::assign_at(self.scope.clone(), *scope_depth, name, &value)
                     .ok_or_else(|| ExecutionErrorKind::UndeclaredVariable(name.clone()))
             }
             Expression::Call(expr, args) => {
@@ -335,7 +340,7 @@ impl Interpreter {
                     ));
                 };
 
-                let callable = match self.environment.get_at(*scope_depth, name) {
+                let callable = match Scope::get_at(self.scope.clone(), *scope_depth, name) {
                     Some(Declarable::Function(callable)) => callable.clone(),
                     Some(Declarable::Variable(Value::Closure(callable))) => callable.clone(),
                     _ => return Err(ExecutionErrorKind::UndeclaredFunction(name.clone())),
@@ -384,17 +389,23 @@ impl Callable {
                     .iter()
                     .map(|arg| interpreter.evaluate(arg))
                     .collect::<Result<Vec<_>, _>>()?;
-                interpreter
-                    .environment
-                    .push(Rc::new(RefCell::new(Scope::new(Some(scope.clone()), true))));
-                for (arg_name, evaluated_arg) in arg_names.iter().zip(evaluated_args.into_iter()) {
-                    interpreter
-                        .environment
-                        .declare(arg_name.clone(), Declarable::Variable(evaluated_arg))?;
-                }
-                let result = interpreter.execute(body)?.unwrap_or(Value::Nil);
-                interpreter.environment.pop();
-                Ok(result)
+
+                let res = interpreter.execute_in_scope(
+                    Scope::boxed(Some(scope.clone()), true),
+                    |interpreter| {
+                        for (arg_name, evaluated_arg) in
+                            arg_names.iter().zip(evaluated_args.into_iter())
+                        {
+                            interpreter
+                                .scope
+                                .borrow_mut()
+                                .declare(arg_name.clone(), Declarable::Variable(evaluated_arg))?;
+                        }
+                        Ok(interpreter.execute(body)?.unwrap_or(Value::Nil))
+                    },
+                )?;
+
+                Ok(res)
             }
             Callable::Builtin(f, _) => f(&args
                 .iter()
