@@ -126,6 +126,12 @@ impl Environment {
         }
     }
 
+    pub fn get_at(&self, depth: usize, name: &str) -> Option<Declarable> {
+        let scope = self.climb(depth);
+        let scope = scope.borrow();
+        scope.get(name)
+    }
+
     pub fn current(&self) -> &Rc<RefCell<Scope>> {
         &self.stack.last().unwrap()
     }
@@ -142,10 +148,6 @@ impl Environment {
         }
     }
 
-    pub fn get(&self, name: &str) -> Option<Declarable> {
-        self.current().borrow().get(name)
-    }
-
     pub fn declare(
         &mut self,
         name: String,
@@ -154,8 +156,23 @@ impl Environment {
         self.current().borrow_mut().declare(name, declarable)
     }
 
-    pub fn assign_variable(&mut self, name: &str, value: &Value) -> Option<Value> {
-        self.current().borrow_mut().assign_variable(name, value)
+    pub fn assign_at(&mut self, depth: usize, name: &str, value: &Value) -> Option<Value> {
+        let scope = self.climb(depth);
+        let mut scope = scope.borrow_mut();
+        scope.assign_variable(name, value)
+    }
+
+    fn climb(&self, depth: usize) -> Rc<RefCell<Scope>> {
+        let mut scope = self.stack.last().unwrap().clone();
+        for _ in 0..depth {
+            let parent = scope.borrow().parent.clone();
+            scope = if let Some(p) = parent {
+                p
+            } else {
+                return scope;
+            };
+        }
+        scope
     }
 
     pub fn is_in_function(&self) -> bool {

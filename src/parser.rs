@@ -2,6 +2,7 @@ use std::cell::RefCell;
 
 use crate::{
     ast::{Expression, InfixOperator, Literal, Program, Statement, UnaryOperator},
+    resolver::Resolver,
     tokenizer::{Token, TokenType},
 };
 
@@ -137,7 +138,11 @@ pub fn program(tokens: &[Token]) -> Result<Program, ParseErrors> {
         return Err(ParseErrors(errors));
     }
 
-    Ok(Program(statments))
+    let mut program = Program(statments);
+
+    Resolver::new().resolve(&mut program);
+
+    Ok(program)
 }
 
 fn consume_until_after<'a>(tokens: &'a [Token], token_types: &[TokenType]) -> &'a [Token] {
@@ -387,9 +392,16 @@ fn assignment<'a>(
 
     match rest.first().map(Token::token_type) {
         Some(TokenType::Equal) => match expr {
-            Expression::Identifier(name) => {
+            Expression::Identifier { name, .. } => {
                 let (value, rest) = assignment(context, &rest[1..])?;
-                Ok((Expression::Assign(name, Box::new(value)), rest))
+                Ok((
+                    Expression::Assign {
+                        name,
+                        expr: Box::new(value),
+                        scope_depth: 0,
+                    },
+                    rest,
+                ))
             }
             _ => Err(ParseErrorWithContext {
                 error: ParseError::ExpectedIdentifier,
@@ -630,7 +642,13 @@ fn primary<'a>(
             let tokens = consume(context, rest, TokenType::RightParen)?;
             Ok((Expression::Grouping(Box::new(expr)), tokens))
         }
-        TokenType::Identifier(name) => Ok((Expression::Identifier(name.clone()), &tokens[1..])),
+        TokenType::Identifier(name) => Ok((
+            Expression::Identifier {
+                name: name.clone(),
+                scope_depth: 0,
+            },
+            &tokens[1..],
+        )),
         token_type => Err(ParseErrorWithContext {
             error: ParseError::Unexpected(token_type.clone()),
             context: context.clone(),

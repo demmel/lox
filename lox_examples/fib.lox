@@ -6,7 +6,7 @@ fun fib(n) {
 
 var start = clock();
 
-for (var i = 0; i < 22; i = i + 1) {
+for (var i = 0; i < 13; i = i + 1) {
     print fib(i);
 }
 

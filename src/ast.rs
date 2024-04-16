@@ -17,12 +17,19 @@ pub enum Statement {
 
 #[derive(Debug, Clone)]
 pub enum Expression {
-    Identifier(String),
+    Identifier {
+        name: String,
+        scope_depth: usize,
+    },
     Literal(Literal),
     Grouping(Box<Expression>),
     Binary(Box<Expression>, InfixOperator, Box<Expression>),
     Unary(UnaryOperator, Box<Expression>),
-    Assign(String, Box<Expression>),
+    Assign {
+        name: String,
+        expr: Box<Expression>,
+        scope_depth: usize,
+    },
     Call(Box<Expression>, Vec<Expression>),
 }
 
@@ -114,12 +121,28 @@ impl Display for Statement {
 impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expression::Identifier(name) => write!(f, "{}", name),
+            Expression::Identifier { name, scope_depth } => {
+                if *scope_depth == 0 {
+                    write!(f, "{}", name)
+                } else {
+                    write!(f, "scope[{}].{}", scope_depth, name)
+                }
+            }
             Expression::Literal(literal) => write!(f, "{}", literal),
             Expression::Grouping(expr) => write!(f, "({})", expr),
             Expression::Binary(left, op, right) => write!(f, "({} {} {})", op, left, right),
             Expression::Unary(op, right) => write!(f, "({} {})", op, right),
-            Expression::Assign(name, expr) => write!(f, "{} = {}", name, expr),
+            Expression::Assign {
+                name,
+                expr,
+                scope_depth,
+            } => {
+                if *scope_depth == 0 {
+                    write!(f, "{} = {}", name, expr)
+                } else {
+                    write!(f, "scope[{}].{} = {}", scope_depth, name, expr)
+                }
+            }
             Expression::Call(name, args) => {
                 write!(f, "{}(", name)?;
                 for (i, arg) in args.iter().enumerate() {

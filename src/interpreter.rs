@@ -205,7 +205,10 @@ impl Interpreter {
 
     fn evaluate(&mut self, expression: &Expression) -> Result<Value, ExecutionErrorKind> {
         let res = match expression {
-            Expression::Identifier(identifier) => match self.environment.get(identifier) {
+            Expression::Identifier {
+                name: identifier,
+                scope_depth,
+            } => match self.environment.get_at(*scope_depth, identifier) {
                 Some(Declarable::Variable(v)) => Ok(v.clone()),
                 Some(Declarable::Function(c)) => Ok(Value::Closure(c.clone())),
                 _ => Err(ExecutionErrorKind::UndeclaredVariable(identifier.clone())),
@@ -313,14 +316,18 @@ impl Interpreter {
                     },
                 }
             }
-            Expression::Assign(name, expr) => {
+            Expression::Assign {
+                name,
+                expr,
+                scope_depth,
+            } => {
                 let value = self.evaluate(&expr)?;
                 self.environment
-                    .assign_variable(name, &value)
+                    .assign_at(*scope_depth, name, &value)
                     .ok_or_else(|| ExecutionErrorKind::UndeclaredVariable(name.clone()))
             }
             Expression::Call(expr, args) => {
-                let Expression::Identifier(name) = expr.as_ref() else {
+                let Expression::Identifier { name, scope_depth } = expr.as_ref() else {
                     return Err(ExecutionErrorKind::InvalidFunctionCall(
                         "not an identifier".to_string(),
                         0,
@@ -328,7 +335,7 @@ impl Interpreter {
                     ));
                 };
 
-                let callable = match self.environment.get(name) {
+                let callable = match self.environment.get_at(*scope_depth, name) {
                     Some(Declarable::Function(callable)) => callable.clone(),
                     Some(Declarable::Variable(Value::Closure(callable))) => callable.clone(),
                     _ => return Err(ExecutionErrorKind::UndeclaredFunction(name.clone())),
