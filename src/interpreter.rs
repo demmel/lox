@@ -19,6 +19,16 @@ pub enum Value {
     Nil,
 }
 
+impl Value {
+    fn is_truthy(&self) -> bool {
+        match self {
+            Value::Nil => false,
+            Value::Boolean(b) => *b,
+            _ => true,
+        }
+    }
+}
+
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -153,8 +163,7 @@ impl Interpreter {
                 })?
             }
             Statement::If(condition, then_branch, else_branch) => {
-                let condition = self.evaluate(condition)?;
-                if is_truthy(&condition) {
+                if self.evaluate(condition)?.is_truthy() {
                     self.execute(then_branch)?
                 } else if let Some(else_branch) = else_branch {
                     self.execute(else_branch)?
@@ -164,7 +173,7 @@ impl Interpreter {
             }
             Statement::While(condition, body) => {
                 let mut res = None;
-                while is_truthy(&self.evaluate(condition)?) {
+                while self.evaluate(condition)?.is_truthy() {
                     res = self.execute(body)?;
                     if res.is_some() {
                         break;
@@ -230,22 +239,22 @@ impl Interpreter {
                 let a = self.evaluate(&a)?;
                 match op {
                     InfixOperator::Or => {
-                        if is_truthy(&a) {
+                        if a.is_truthy() {
                             return Ok(Value::Boolean(true));
                         }
                         let b = self.evaluate(&b)?;
-                        if is_truthy(&b) {
+                        if b.is_truthy() {
                             return Ok(Value::Boolean(true));
                         } else {
                             return Ok(Value::Boolean(false));
                         }
                     }
                     InfixOperator::And => {
-                        if !is_truthy(&a) {
+                        if !a.is_truthy() {
                             return Ok(Value::Boolean(false));
                         }
                         let b = self.evaluate(&b)?;
-                        if !is_truthy(&b) {
+                        if !b.is_truthy() {
                             return Ok(Value::Boolean(false));
                         } else {
                             return Ok(Value::Boolean(true));
@@ -360,14 +369,6 @@ impl Interpreter {
             }
         }?;
         Ok(res)
-    }
-}
-
-fn is_truthy(value: &Value) -> bool {
-    match value {
-        Value::Nil => false,
-        Value::Boolean(b) => *b,
-        _ => true,
     }
 }
 
