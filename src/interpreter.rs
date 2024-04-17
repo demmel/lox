@@ -2,6 +2,7 @@ mod scope;
 
 use std::{
     cell::RefCell,
+    collections::HashMap,
     fmt::{Debug, Display},
     rc::Rc,
 };
@@ -16,7 +17,7 @@ pub enum Value {
     String(String),
     Boolean(bool),
     Closure(Callable),
-    Instance(String),
+    Instance(String, HashMap<String, Value>),
     Nil,
 }
 
@@ -37,7 +38,13 @@ impl Display for Value {
             Value::String(s) => write!(f, "\"{}\"", s),
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Closure(c) => write!(f, "<function {}>", c.arity()),
-            Value::Instance(class) => write!(f, "<instance of {}>", class),
+            Value::Instance(class, fields) => {
+                write!(f, "{} {{", class)?;
+                for (name, value) in fields.iter() {
+                    write!(f, "{}: {}, ", name, value)?;
+                }
+                write!(f, "}}")
+            }
             Value::Nil => write!(f, "nil"),
         }
     }
@@ -91,6 +98,8 @@ pub enum ExecutionErrorKind {
     InvalidFunctionCall(String, usize, usize),
     CannotReturnFromTopLevel,
     FunctionRedeclaration(String),
+    GetOnNonInstance(String),
+    UndefinedProperty(String),
 }
 
 impl Interpreter {
@@ -377,6 +386,16 @@ impl Interpreter {
 
                 Ok(result)
             }
+            Expression::Get(expr, name) => {
+                let instance = self.evaluate(expr)?;
+                match instance {
+                    Value::Instance(_class, props) => Ok(props
+                        .get(name)
+                        .cloned()
+                        .ok_or(ExecutionErrorKind::UndefinedProperty(name.clone()))?),
+                    _ => Err(ExecutionErrorKind::GetOnNonInstance(instance.to_string())),
+                }
+            }
         }?;
         Ok(res)
     }
@@ -423,7 +442,7 @@ impl Callable {
                 .iter()
                 .map(|arg| interpreter.evaluate(arg))
                 .collect::<Result<Vec<_>, _>>()?),
-            Callable::ClassConstructor(class) => Ok(Value::Instance(class.clone())),
+            Callable::ClassConstructor(class) => Ok(Value::Instance(class.clone(), HashMap::new())),
         }
     }
 

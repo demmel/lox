@@ -66,7 +66,7 @@ impl Resolver {
                     self.resolve_expression(expression);
                 }
             }
-            Statement::ClassDeclaration(name, methods) => {
+            Statement::ClassDeclaration(name, _methods) => {
                 self.declare(name.clone());
                 self.define(name.clone());
             }
@@ -106,6 +106,9 @@ impl Resolver {
                 for argument in arguments {
                     self.resolve_expression(argument);
                 }
+            }
+            Expression::Get(expr, _name) => {
+                self.resolve_expression(expr);
             }
         }
     }

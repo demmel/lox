@@ -590,15 +590,23 @@ fn call<'a>(
     let _guard = context.push("call");
     let (mut expr, mut tokens) = primary(context, tokens)?;
 
-    while matches!(
-        tokens.first().map(Token::token_type),
-        Some(TokenType::LeftParen)
-    ) {
-        tokens = &tokens[1..];
-        let (args, rest) = parameter_list(tokens, context, expression)?;
-        tokens = rest;
-        expr = Expression::Call(Box::new(expr), args);
-    }
+    while match tokens.first().map(Token::token_type) {
+        Some(TokenType::LeftParen) => {
+            tokens = &tokens[1..];
+            let (args, rest) = parameter_list(tokens, context, expression)?;
+            tokens = rest;
+            expr = Expression::Call(Box::new(expr), args);
+            true
+        }
+        Some(TokenType::Dot) => {
+            tokens = &tokens[1..];
+            let (name, rest) = match_identifier(context, tokens)?;
+            tokens = rest;
+            expr = Expression::Get(Box::new(expr), name);
+            true
+        }
+        _ => false,
+    } {}
 
     Ok((expr, tokens))
 }

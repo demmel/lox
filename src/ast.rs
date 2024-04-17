@@ -39,6 +39,7 @@ pub enum Expression {
         scope_depth: usize,
     },
     Call(Box<Expression>, Vec<Expression>),
+    Get(Box<Expression>, String),
 }
 
 #[derive(Debug, Clone)]
@@ -162,6 +163,7 @@ impl Display for Expression {
                 }
                 write!(f, ")")
             }
+            Expression::Get(expr, name) => write!(f, "{}.{}", expr, name),
         }
     }
 }
