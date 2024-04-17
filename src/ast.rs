@@ -40,6 +40,7 @@ pub enum Expression {
     },
     Call(Box<Expression>, Vec<Expression>),
     Get(Box<Expression>, String),
+    Set(Box<Expression>, String, Box<Expression>),
 }
 
 #[derive(Debug, Clone)]
@@ -164,6 +165,7 @@ impl Display for Expression {
                 write!(f, ")")
             }
             Expression::Get(expr, name) => write!(f, "{}.{}", expr, name),
+            Expression::Set(expr, name, value) => write!(f, "{}.{} = {}", expr, name, value),
         }
     }
 }

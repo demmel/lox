@@ -110,6 +110,10 @@ impl Resolver {
             Expression::Get(expr, _name) => {
                 self.resolve_expression(expr);
             }
+            Expression::Set(expr, _name, value) => {
+                self.resolve_expression(expr);
+                self.resolve_expression(value);
+            }
         }
     }
 

@@ -61,10 +61,12 @@ pub enum ParseError {
     ExpectedOneOf(Vec<TokenType>),
     #[error("Unexpected \"{0}\"")]
     Unexpected(TokenType),
-    #[error("Unexpected identifier")]
+    #[error("Expected identifier")]
     ExpectedIdentifier,
     #[error("No more than 255 arguments")]
     TooManyArguments,
+    #[error("Expected assignable expression (variable or property)")]
+    ExpectedAssignable,
 }
 
 #[derive(Debug, Clone)]
@@ -415,29 +417,37 @@ fn assignment<'a>(
     tokens: &'a [Token],
 ) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
     let _guard = context.push("assignment");
-    let (expr, rest) = logical_or(context, tokens)?;
+    let (mut expr, mut tokens) = logical_or(context, tokens)?;
 
-    match rest.first().map(Token::token_type) {
-        Some(TokenType::Equal) => match expr {
-            Expression::Identifier { name, .. } => {
-                let (value, rest) = assignment(context, &rest[1..])?;
-                Ok((
-                    Expression::Assign {
+    match tokens.first().map(Token::token_type) {
+        Some(TokenType::Equal) => {
+            tokens = &tokens[1..];
+            let (value, rest) = expression(context, tokens)?;
+            match expr {
+                Expression::Identifier { name, scope_depth } => {
+                    expr = Expression::Assign {
                         name,
                         expr: Box::new(value),
-                        scope_depth: 0,
-                    },
-                    rest,
-                ))
+                        scope_depth,
+                    };
+                }
+                Expression::Get(object, name) => {
+                    expr = Expression::Set(object, name, Box::new(value));
+                }
+                _ => {
+                    return Err(ParseErrorWithContext {
+                        error: ParseError::ExpectedAssignable,
+                        context: context.clone(),
+                        token: tokens.first().cloned(),
+                    });
+                }
             }
-            _ => Err(ParseErrorWithContext {
-                error: ParseError::ExpectedIdentifier,
-                context: context.clone(),
-                token: rest.first().cloned(),
-            }),
-        },
-        _ => Ok((expr, rest)),
+            tokens = rest;
+        }
+        _ => {}
     }
+
+    Ok((expr, tokens))
 }
 
 fn binary<'a>(

@@ -17,8 +17,14 @@ pub enum Value {
     String(String),
     Boolean(bool),
     Closure(Callable),
-    Instance(String, HashMap<String, Value>),
+    Instance(Rc<RefCell<Instance>>),
     Nil,
+}
+
+#[derive(Debug)]
+pub struct Instance {
+    class: String,
+    fields: HashMap<String, Value>,
 }
 
 impl Value {
@@ -38,13 +44,7 @@ impl Display for Value {
             Value::String(s) => write!(f, "\"{}\"", s),
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Closure(c) => write!(f, "<function {}>", c.arity()),
-            Value::Instance(class, fields) => {
-                write!(f, "{} {{", class)?;
-                for (name, value) in fields.iter() {
-                    write!(f, "{}: {}, ", name, value)?;
-                }
-                write!(f, "}}")
-            }
+            Value::Instance(instance) => write!(f, "<instance of {}>", instance.borrow().class),
             Value::Nil => write!(f, "nil"),
         }
     }
@@ -99,6 +99,7 @@ pub enum ExecutionErrorKind {
     CannotReturnFromTopLevel,
     FunctionRedeclaration(String),
     GetOnNonInstance(String),
+    SetOnNonInstance(String),
     UndefinedProperty(String),
 }
 
@@ -389,11 +390,27 @@ impl Interpreter {
             Expression::Get(expr, name) => {
                 let instance = self.evaluate(expr)?;
                 match instance {
-                    Value::Instance(_class, props) => Ok(props
+                    Value::Instance(instance) => Ok(instance
+                        .borrow()
+                        .fields
                         .get(name)
                         .cloned()
                         .ok_or(ExecutionErrorKind::UndefinedProperty(name.clone()))?),
                     _ => Err(ExecutionErrorKind::GetOnNonInstance(instance.to_string())),
+                }
+            }
+            Expression::Set(expr, name, value) => {
+                let instance = self.evaluate(expr)?;
+                match instance {
+                    Value::Instance(instance) => {
+                        let value = self.evaluate(value)?;
+                        instance
+                            .borrow_mut()
+                            .fields
+                            .insert(name.clone(), value.clone());
+                        Ok(value)
+                    }
+                    _ => Err(ExecutionErrorKind::SetOnNonInstance(instance.to_string())),
                 }
             }
         }?;
@@ -442,7 +459,12 @@ impl Callable {
                 .iter()
                 .map(|arg| interpreter.evaluate(arg))
                 .collect::<Result<Vec<_>, _>>()?),
-            Callable::ClassConstructor(class) => Ok(Value::Instance(class.clone(), HashMap::new())),
+            Callable::ClassConstructor(class) => {
+                Ok(Value::Instance(Rc::new(RefCell::new(Instance {
+                    class: class.clone(),
+                    fields: HashMap::new(),
+                }))))
+            }
         }
     }
 
