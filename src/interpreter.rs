@@ -2,7 +2,6 @@ mod scope;
 
 use std::{
     cell::RefCell,
-    collections::{hash_map::Entry, HashMap},
     fmt::{Debug, Display},
     rc::Rc,
 };
@@ -17,6 +16,7 @@ pub enum Value {
     String(String),
     Boolean(bool),
     Closure(Callable),
+    Instance(String),
     Nil,
 }
 
@@ -37,6 +37,7 @@ impl Display for Value {
             Value::String(s) => write!(f, "\"{}\"", s),
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Closure(c) => write!(f, "<function {}>", c.arity()),
+            Value::Instance(class) => write!(f, "<instance of {}>", class),
             Value::Nil => write!(f, "nil"),
         }
     }
@@ -203,30 +204,10 @@ impl Interpreter {
                 };
                 result
             }
-            Statement::ClassDeclaration(name, methods) => {
-                self.scope.borrow_mut().declare(
-                    name.clone(),
-                    Declarable::Class(methods.iter().try_fold(
-                        HashMap::new(),
-                        |mut declared, method| {
-                            match declared.entry(method.name.clone()) {
-                                Entry::Occupied(_) => {
-                                    return Err(ExecutionErrorKind::FunctionRedeclaration(
-                                        method.name.clone(),
-                                    ));
-                                }
-                                Entry::Vacant(v) => {
-                                    v.insert(Callable::Function(
-                                        self.scope.clone(),
-                                        method.args.clone(),
-                                        (&*method.body).clone(),
-                                    ));
-                                }
-                            }
-                            Ok(declared)
-                        },
-                    )?),
-                )?;
+            Statement::ClassDeclaration(name, _methods) => {
+                self.scope
+                    .borrow_mut()
+                    .declare(name.clone(), Declarable::Class)?;
                 None
             }
         };
@@ -253,6 +234,7 @@ impl Interpreter {
             } => match Scope::get_at(self.scope.clone(), *scope_depth, identifier) {
                 Some(Declarable::Variable(v)) => Ok(v.clone()),
                 Some(Declarable::Function(c)) => Ok(Value::Closure(c.clone())),
+                Some(Declarable::Class) => Ok(Value::String(identifier.clone())),
                 _ => Err(ExecutionErrorKind::UndeclaredVariable(identifier.clone())),
             },
             Expression::Literal(literal) => match literal {
@@ -379,6 +361,7 @@ impl Interpreter {
                 let callable = match Scope::get_at(self.scope.clone(), *scope_depth, name) {
                     Some(Declarable::Function(callable)) => callable.clone(),
                     Some(Declarable::Variable(Value::Closure(callable))) => callable.clone(),
+                    Some(Declarable::Class) => Callable::ClassConstructor(name.clone()),
                     _ => return Err(ExecutionErrorKind::UndeclaredFunction(name.clone())),
                 };
 
@@ -403,6 +386,7 @@ impl Interpreter {
 pub enum Callable {
     Function(Rc<RefCell<Scope>>, Vec<String>, Statement),
     Builtin(fn(&[Value]) -> Result<Value, ExecutionErrorKind>, usize),
+    ClassConstructor(String),
 }
 
 impl Callable {
@@ -439,6 +423,7 @@ impl Callable {
                 .iter()
                 .map(|arg| interpreter.evaluate(arg))
                 .collect::<Result<Vec<_>, _>>()?),
+            Callable::ClassConstructor(class) => Ok(Value::Instance(class.clone())),
         }
     }
 
@@ -446,6 +431,7 @@ impl Callable {
         match self {
             Callable::Function(_, args, _) => args.len(),
             Callable::Builtin(_, arity) => *arity,
+            Callable::ClassConstructor(_) => 0,
         }
     }
 }

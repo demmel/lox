@@ -1,0 +1,15 @@
+    class Counter {
+        init() {
+            this.count = 0;
+        }
+        count() {
+            this.count = this.count + 1;
+            return this.count;
+        }
+    }
+    
+    print Counter;
+    var counter = Counter();
+    print counter;
+    // print counter.count(); // 1
+    // print counter.count(); // 2
