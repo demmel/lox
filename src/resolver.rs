@@ -66,6 +66,10 @@ impl Resolver {
                     self.resolve_expression(expression);
                 }
             }
+            Statement::ClassDeclaration(name, methods) => {
+                self.declare(name.clone());
+                self.define(name.clone());
+            }
         }
     }
 

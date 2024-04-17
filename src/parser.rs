@@ -167,8 +167,28 @@ fn declaration<'a>(
             let (function, tokens) = function_declaration(context, &tokens[1..])?;
             Ok((Statement::FunctionDeclaration(function), tokens))
         }
+        Some(TokenType::Class) => Ok(class_declaration(context, &tokens[1..])?),
         _ => statement(context, tokens),
     }
+}
+
+fn class_declaration<'a>(
+    context: &ParseContext,
+    tokens: &'a [Token],
+) -> Result<(Statement, &'a [Token]), ParseErrorWithContext> {
+    let _guard = context.push("class_declaration");
+    let (name, tokens) = match_identifier(context, tokens)?;
+    let mut tokens = consume(context, tokens, TokenType::LeftBrace)?;
+
+    let mut methods = Vec::new();
+    while let Ok((stmt, rest)) = function_declaration(context, tokens) {
+        methods.push(stmt);
+        tokens = rest;
+    }
+
+    let tokens = consume(context, tokens, TokenType::RightBrace)?;
+
+    Ok((Statement::ClassDeclaration(name, methods), tokens))
 }
 
 fn var_declaration<'a>(

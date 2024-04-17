@@ -11,6 +11,7 @@ use super::{Callable, ExecutionErrorKind, Value};
 pub enum Declarable {
     Variable(Value),
     Function(Callable),
+    Class(HashMap<String, Callable>),
 }
 
 #[derive(Clone)]
@@ -144,6 +145,18 @@ impl Debug for Scope {
                                         format!("Builtin<{:?}>({})", closure, arity)
                                     }
                                 },
+                                Declarable::Class(methods) => {
+                                    format!(
+                                        "Class({})",
+                                        methods
+                                            .iter()
+                                            .map(|(name, method)| {
+                                                format!("{}: {:?}", name, method)
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    )
+                                }
                             },
                         )
                     })

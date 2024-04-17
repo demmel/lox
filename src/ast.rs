@@ -13,6 +13,8 @@ pub enum Statement {
     If(Expression, Box<Statement>, Option<Box<Statement>>),
     While(Expression, Box<Statement>),
     Return(Option<Expression>),
+    ClassDeclaration(String, Vec<Function>),
+}
 
 #[derive(Debug, Clone)]
 pub struct Function {
@@ -103,15 +105,9 @@ impl Display for Statement {
                 write!(f, "while ({}) ", condition)?;
                 writeln!(f, "{}", body)
             }
-            Statement::FunctionDeclaration(Function { name, args, body }) => {
-                write!(f, "fun {name}(")?;
-                for (i, arg) in args.iter().enumerate() {
-                    write!(f, "{arg}")?;
-                    if i != args.len() - 1 {
-                        write!(f, ", ")?;
-                    }
-                }
-                writeln!(f, ") {body}")
+            Statement::FunctionDeclaration(function) => {
+                write!(f, "fun")?;
+                write!(f, " {}", function)
             }
             Statement::Return(expr) => {
                 if let Some(expr) = expr {
@@ -119,6 +115,13 @@ impl Display for Statement {
                 } else {
                     write!(f, "return;")
                 }
+            }
+            Statement::ClassDeclaration(name, methods) => {
+                write!(f, "class {} {{", name)?;
+                for method in methods {
+                    writeln!(f, "{}", method)?;
+                }
+                write!(f, "}}")
             }
         }
     }
@@ -199,5 +202,18 @@ impl Display for UnaryOperator {
             UnaryOperator::Negate => write!(f, "-"),
             UnaryOperator::Not => write!(f, "!"),
         }
+    }
+}
+
+impl Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}(", self.name)?;
+        for (i, arg) in self.args.iter().enumerate() {
+            write!(f, "{}", arg)?;
+            if i != self.args.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, ") {}", self.body)
     }
 }

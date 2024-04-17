@@ -2,6 +2,7 @@ mod scope;
 
 use std::{
     cell::RefCell,
+    collections::{hash_map::Entry, HashMap},
     fmt::{Debug, Display},
     rc::Rc,
 };
@@ -201,6 +202,32 @@ impl Interpreter {
                     result = Some(self.evaluate(expression)?);
                 };
                 result
+            }
+            Statement::ClassDeclaration(name, methods) => {
+                self.scope.borrow_mut().declare(
+                    name.clone(),
+                    Declarable::Class(methods.iter().try_fold(
+                        HashMap::new(),
+                        |mut declared, method| {
+                            match declared.entry(method.name.clone()) {
+                                Entry::Occupied(_) => {
+                                    return Err(ExecutionErrorKind::FunctionRedeclaration(
+                                        method.name.clone(),
+                                    ));
+                                }
+                                Entry::Vacant(v) => {
+                                    v.insert(Callable::Function(
+                                        self.scope.clone(),
+                                        method.args.clone(),
+                                        (&*method.body).clone(),
+                                    ));
+                                }
+                            }
+                            Ok(declared)
+                        },
+                    )?),
+                )?;
+                None
             }
         };
 
