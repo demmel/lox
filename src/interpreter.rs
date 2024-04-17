@@ -6,7 +6,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::ast::{Expression, InfixOperator, Literal, Program, Statement, UnaryOperator};
+use crate::ast::{Expression, Function, InfixOperator, Literal, Program, Statement, UnaryOperator};
 
 use self::scope::{Declarable, Scope};
 
@@ -181,7 +181,7 @@ impl Interpreter {
                 }
                 res
             }
-            Statement::FunctionDeclaration(name, args, body) => {
+            Statement::FunctionDeclaration(Function { name, args, body }) => {
                 self.scope.borrow_mut().declare(
                     name.clone(),
                     Declarable::Function(Callable::Function(

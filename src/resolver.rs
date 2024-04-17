@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{Expression, Program, Statement};
+use crate::ast::{Expression, Function, Program, Statement};
 
 #[derive(Debug, Clone, Copy)]
 enum BindingState {
@@ -40,7 +40,11 @@ impl Resolver {
                 self.resolve_expression(expression);
                 self.define(name.clone());
             }
-            Statement::FunctionDeclaration(name, parameters, body) => {
+            Statement::FunctionDeclaration(Function {
+                name,
+                args: parameters,
+                body,
+            }) => {
                 self.declare(name.clone());
                 self.define(name.clone());
                 self.resolve_function(parameters, body.as_mut());
