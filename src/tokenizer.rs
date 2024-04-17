@@ -441,58 +441,55 @@ fn string(state: TokenizerState) -> Option<(Token, TokenizerState)> {
 }
 
 fn number(state: TokenizerState) -> Option<(Token, TokenizerState)> {
-    let mut chars = state.remaining.chars().peekable();
-    let first = chars.next()?;
-    if !first.is_ascii_digit() && first != '.' {
-        return None;
-    }
+    // Valid number types
+    // 123
+    // 123.456
+    // .456
+    // 123.
+    //
+    // We need to make sure we don't consume the dot if it's not followed by a number.
 
-    let mut len = first.len_utf8();
-    let mut count = 1;
+    let mut chars = state.remaining.chars();
+    let mut len = 0;
+    let mut count = 0;
+    let mut has_dot = false;
+    let mut has_number = false;
 
-    let mut phase = 0;
-    if first == '.' {
-        phase = 1;
-    }
-
-    while let Some(&c) = chars.peek() {
-        match phase {
-            0 => {
-                if c == '.' {
-                    phase = 1;
-                } else if !c.is_ascii_digit() {
-                    break;
-                }
-                chars.next();
-                len += c.len_utf8();
-                count += 1;
+    while let Some(c) = chars.next() {
+        if c.is_ascii_digit() {
+            len += c.len_utf8();
+            count += 1;
+            has_number = true;
+        } else if c == '.' {
+            if has_dot {
+                return None;
             }
-            1 => {
-                if !c.is_ascii_digit() {
-                    break;
-                }
-                chars.next();
-                len += c.len_utf8();
-                count += 1;
-            }
-            _ => unreachable!(),
+            has_dot = true;
+            len += c.len_utf8();
+            count += 1;
+        } else {
+            break;
         }
     }
 
-    Some((
-        Token {
-            token_type: TokenType::Number(state.remaining[..len].parse().unwrap()),
-            span: Span {
-                start_line: state.line,
-                start_column: state.column,
-                end_line: state.line,
-                end_column: state.column + count,
+    if has_number {
+        Some((
+            Token {
+                token_type: TokenType::Number(state.remaining[..len].parse().unwrap()),
+                span: Span {
+                    start_line: state.line,
+                    start_column: state.column,
+                    end_line: state.line,
+                    end_column: state.column + count,
+                },
             },
-        },
-        TokenizerState {
-            remaining: &state.remaining[len..],
-            column: state.column + count,
-            ..state
-        },
-    ))
+            TokenizerState {
+                remaining: &state.remaining[len..],
+                column: state.column + count,
+                ..state
+            },
+        ))
+    } else {
+        None
+    }
 }
