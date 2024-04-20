@@ -12,6 +12,7 @@ enum BindingState {
 enum FunctionType {
     None,
     Function,
+    Initializer,
     Method,
 }
 
@@ -33,6 +34,8 @@ pub enum ResolverError {
     ReturnFromTopLevel,
     #[error("Cannot use 'this' outside of a class.")]
     ThisOutsideClass,
+    #[error("Cannot return a value from an initializer.")]
+    ReturnFromInitializer,
 }
 
 impl Resolver {
@@ -88,8 +91,14 @@ impl Resolver {
                 self.resolve_statement(body.as_mut())?;
             }
             Statement::Return(expression) => {
-                if matches!(self.function_type, FunctionType::None) {
-                    return Err(ResolverError::ReturnFromTopLevel);
+                match self.function_type {
+                    FunctionType::None => return Err(ResolverError::ReturnFromTopLevel),
+                    FunctionType::Initializer => {
+                        if expression.is_some() {
+                            return Err(ResolverError::ReturnFromInitializer);
+                        }
+                    }
+                    _ => {}
                 }
 
                 if let Some(expression) = expression {
@@ -116,7 +125,15 @@ impl Resolver {
                         body,
                         ..
                     } = method;
-                    self.resolve_function(parameters, body.as_mut(), FunctionType::Method)?;
+                    self.resolve_function(
+                        parameters,
+                        body.as_mut(),
+                        if method.name == "init" {
+                            FunctionType::Initializer
+                        } else {
+                            FunctionType::Method
+                        },
+                    )?;
                 }
 
                 self.end_scope();
