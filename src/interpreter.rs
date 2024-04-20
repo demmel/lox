@@ -15,16 +15,6 @@ use self::{
     scope::{Declarable, Scope},
 };
 
-#[derive(Debug, Clone)]
-pub enum Value {
-    Number(f64),
-    String(String),
-    Boolean(bool),
-    Closure(Callable),
-    Instance(Rc<RefCell<Instance>>),
-    Nil,
-}
-
 #[derive(Debug)]
 pub struct Class {
     pub name: String,
@@ -35,6 +25,16 @@ pub struct Class {
 pub struct Instance {
     class: Rc<Class>,
     fields: HashMap<String, Value>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Value {
+    Number(f64),
+    String(String),
+    Boolean(bool),
+    Closure(Callable),
+    Instance(Rc<RefCell<Instance>>),
+    Nil,
 }
 
 impl Value {
