@@ -49,7 +49,17 @@ impl CallableFunction {
                         .borrow_mut()
                         .declare(arg_name.clone(), Declarable::Variable(evaluated_arg))?;
                 }
-                Ok(interpreter.execute(&self.decl.body)?.unwrap_or(Value::Nil))
+                let res = interpreter.execute(&self.decl.body)?.unwrap_or(Value::Nil);
+                if self.is_initializer {
+                    match Scope::get_at(interpreter.scope.clone(), 1, "this") {
+                        Some(Declarable::Variable(Value::Instance(instance))) => {
+                            Ok(Value::Instance(instance.clone()))
+                        }
+                        _ => unreachable!(),
+                    }
+                } else {
+                    Ok(res)
+                }
             },
         )?;
 
