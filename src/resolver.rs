@@ -1,4 +1,4 @@
-use std::{collections::HashMap, thread::scope};
+use std::collections::HashMap;
 
 use crate::ast::{Expression, Function, Program, Statement};
 

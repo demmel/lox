@@ -5,7 +5,10 @@ use std::{
     rc::Rc,
 };
 
-use super::{Callable, CallableFunction, Class, ExecutionErrorKind, Value};
+use super::{
+    callable::{Callable, CallableFunction},
+    Class, ExecutionErrorKind, Value,
+};
 
 #[derive(Debug, Clone)]
 pub enum Declarable {

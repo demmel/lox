@@ -1,6 +1,4 @@
-use self::scope::{Declarable, Scope};
-use crate::ast::{Expression, Function, InfixOperator, Literal, Program, Statement, UnaryOperator};
-
+mod callable;
 mod scope;
 
 use std::{
@@ -8,6 +6,13 @@ use std::{
     collections::HashMap,
     fmt::{Debug, Display},
     rc::Rc,
+};
+
+use crate::ast::{Expression, Function, InfixOperator, Literal, Program, Statement, UnaryOperator};
+
+use self::{
+    callable::{Callable, CallableFunction},
+    scope::{Declarable, Scope},
 };
 
 #[derive(Debug, Clone)]
@@ -454,106 +459,5 @@ impl Interpreter {
         }?;
 
         Ok(res)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Callable {
-    Function(CallableFunction),
-    Builtin(fn(&[Value]) -> Result<Value, ExecutionErrorKind>, usize),
-    ClassConstructor(Rc<Class>),
-}
-
-#[derive(Debug, Clone)]
-pub struct CallableFunction {
-    scope: Rc<RefCell<Scope>>,
-    args: Vec<String>,
-    body: Statement,
-}
-
-impl CallableFunction {
-    fn bind(&self, instance: &Rc<RefCell<Instance>>) -> Result<Self, ExecutionErrorKind> {
-        let scope = Scope::boxed(Some(self.scope.clone()), false);
-        scope.borrow_mut().declare(
-            "this".to_string(),
-            Declarable::Variable(Value::Instance(instance.clone())),
-        )?;
-        Ok(Self {
-            scope,
-            args: self.args.clone(),
-            body: self.body.clone(),
-        })
-    }
-
-    fn call(
-        &self,
-        interpreter: &mut Interpreter,
-        args: &[Expression],
-    ) -> Result<Value, ExecutionErrorKind> {
-        let evaluated_args = args
-            .iter()
-            .map(|arg| interpreter.evaluate(arg))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let res = interpreter.execute_in_scope(
-            Scope::boxed(Some(self.scope.clone()), true),
-            |interpreter| {
-                for (arg_name, evaluated_arg) in self.args.iter().zip(evaluated_args.into_iter()) {
-                    interpreter
-                        .scope
-                        .borrow_mut()
-                        .declare(arg_name.clone(), Declarable::Variable(evaluated_arg))?;
-                }
-                Ok(interpreter.execute(&self.body)?.unwrap_or(Value::Nil))
-            },
-        )?;
-
-        Ok(res)
-    }
-}
-
-impl Callable {
-    fn call(
-        &self,
-        interpreter: &mut Interpreter,
-        args: &[Expression],
-    ) -> Result<Value, ExecutionErrorKind> {
-        match self {
-            Callable::Function(callable_function) => callable_function.call(interpreter, args),
-            Callable::Builtin(f, _) => f(&args
-                .iter()
-                .map(|arg| interpreter.evaluate(arg))
-                .collect::<Result<Vec<_>, _>>()?),
-            Callable::ClassConstructor(class) => {
-                let instance = Rc::new(RefCell::new(Instance {
-                    class: class.clone(),
-                    fields: HashMap::new(),
-                }));
-                if let Some(init) = class.methods.get("init") {
-                    init.bind(&instance)?.call(interpreter, args)?;
-                }
-                Ok(Value::Instance(instance))
-            }
-        }
-    }
-
-    fn arity(&self) -> usize {
-        match self {
-            Callable::Function(callable_function) => callable_function.args.len(),
-            Callable::Builtin(_, arity) => *arity,
-            Callable::ClassConstructor(_) => 0,
-        }
-    }
-}
-
-impl Display for Callable {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Callable::Function(callable_function) => {
-                write!(f, "<function {}>", callable_function.args.len())
-            }
-            Callable::Builtin(_, arity) => write!(f, "<builtin function {}>", arity),
-            Callable::ClassConstructor(class) => write!(f, "<class {}>", class.name),
-        }
     }
 }
