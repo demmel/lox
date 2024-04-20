@@ -91,7 +91,13 @@ impl Callable {
         match self {
             Callable::Function(callable_function) => callable_function.args.len(),
             Callable::Builtin(_, arity) => *arity,
-            Callable::ClassConstructor(_) => 0,
+            Callable::ClassConstructor(class) => {
+                if let Some(init) = class.methods.get("init") {
+                    init.args.len()
+                } else {
+                    0
+                }
+            }
         }
     }
 }
