@@ -36,6 +36,8 @@ pub enum ResolverError {
     ThisOutsideClass,
     #[error("Cannot return a value from an initializer.")]
     ReturnFromInitializer,
+    #[error("Cannot read local variable in its own initializer.")]
+    CannotReadLocalVariableInItsOwnInitializer,
 }
 
 impl Resolver {
@@ -151,7 +153,7 @@ impl Resolver {
                 if let Some(scope) = self.scopes.last() {
                     match scope.get(name) {
                         Some(BindingState::Declared) => {
-                            eprintln!("Error: Cannot read local variable in its own initializer.");
+                            return Err(ResolverError::CannotReadLocalVariableInItsOwnInitializer);
                         }
                         _ => {}
                     }
