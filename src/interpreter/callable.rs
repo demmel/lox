@@ -1,17 +1,27 @@
 use std::{cell::RefCell, collections::HashMap, fmt::Display, rc::Rc};
 
-use crate::ast::{Expression, Function};
+use crate::ast::{Expression, FunctionDecl};
 
 use super::{
     scope::{Declarable, Scope},
     Class, ExecutionErrorKind, Instance, Interpreter, Value,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CallableFunction {
     pub scope: Rc<RefCell<Scope>>,
-    pub decl: Function,
+    pub decl: FunctionDecl,
     pub is_initializer: bool,
+}
+
+impl std::fmt::Debug for CallableFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CallableFunction")
+            .field("scope", &self.scope.as_ptr())
+            .field("decl", &self.decl)
+            .field("is_initializer", &self.is_initializer)
+            .finish()
+    }
 }
 
 impl CallableFunction {

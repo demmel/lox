@@ -1,6 +1,7 @@
+use core::panic;
 use std::collections::HashMap;
 
-use crate::ast::{Expression, Function, Program, Statement};
+use crate::ast::{Expression, FunctionDecl, Program, Statement};
 
 #[derive(Debug, Clone, Copy)]
 enum BindingState {
@@ -38,6 +39,8 @@ pub enum ResolverError {
     ReturnFromInitializer,
     #[error("Cannot read local variable in its own initializer.")]
     CannotReadLocalVariableInItsOwnInitializer,
+    #[error("Cannot inherit from itself.")]
+    CannotInheritFromItself,
 }
 
 impl Resolver {
@@ -71,7 +74,7 @@ impl Resolver {
                 self.resolve_expression(expression)?;
                 self.define(name.clone());
             }
-            Statement::FunctionDeclaration(Function {
+            Statement::FunctionDeclaration(FunctionDecl {
                 name,
                 args: parameters,
                 body,
@@ -107,12 +110,22 @@ impl Resolver {
                     self.resolve_expression(expression)?;
                 }
             }
-            Statement::ClassDeclaration(name, methods) => {
-                self.declare(name.clone());
-                self.define(name.clone());
+            Statement::ClassDeclaration(class_decl) => {
+                self.declare(class_decl.name.clone());
+                self.define(class_decl.name.clone());
 
                 let enclosing_class = self.class_type;
                 self.class_type = ClassType::Class;
+
+                if let Some(superclass) = &mut class_decl.superclass {
+                    let Expression::Identifier { name, .. } = &superclass else {
+                        panic!("Superclass must be an identifier.");
+                    };
+                    if name == &class_decl.name {
+                        return Err(ResolverError::CannotInheritFromItself);
+                    }
+                    self.resolve_expression(superclass)?;
+                }
 
                 self.begin_scope();
 
@@ -121,8 +134,8 @@ impl Resolver {
                     .unwrap()
                     .insert("this".to_string(), BindingState::Defined);
 
-                for method in methods {
-                    let Function {
+                for method in &mut class_decl.methods {
+                    let FunctionDecl {
                         args: parameters,
                         body,
                         ..

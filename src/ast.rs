@@ -7,20 +7,27 @@ pub struct Program(pub Vec<Statement>);
 pub enum Statement {
     Expression(Expression),
     VarDeclaration(String, Expression),
-    FunctionDeclaration(Function),
+    FunctionDeclaration(FunctionDecl),
     Print(Expression),
     Block(Vec<Statement>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
     While(Expression, Box<Statement>),
     Return(Option<Expression>),
-    ClassDeclaration(String, Vec<Function>),
+    ClassDeclaration(ClassDecl),
 }
 
 #[derive(Debug, Clone)]
-pub struct Function {
+pub struct FunctionDecl {
     pub name: String,
     pub args: Vec<String>,
     pub body: Box<Statement>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ClassDecl {
+    pub name: String,
+    pub superclass: Option<Expression>,
+    pub methods: Vec<FunctionDecl>,
 }
 
 #[derive(Debug, Clone)]
@@ -119,8 +126,16 @@ impl Display for Statement {
                     write!(f, "return;")
                 }
             }
-            Statement::ClassDeclaration(name, methods) => {
-                write!(f, "class {} {{", name)?;
+            Statement::ClassDeclaration(ClassDecl {
+                name,
+                superclass,
+                methods,
+            }) => {
+                write!(f, "class {}", name)?;
+                if let Some(superclass) = superclass {
+                    write!(f, " < {}", superclass)?;
+                }
+                writeln!(f, " {{")?;
                 for method in methods {
                     writeln!(f, "{}", method)?;
                 }
@@ -217,7 +232,7 @@ impl Display for UnaryOperator {
     }
 }
 
-impl Display for Function {
+impl Display for FunctionDecl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}(", self.name)?;
         for (i, arg) in self.args.iter().enumerate() {

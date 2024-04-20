@@ -1,9 +1,9 @@
 mod callable;
+mod class;
 mod scope;
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
     fmt::{Debug, Display},
     rc::Rc,
 };
@@ -12,20 +12,9 @@ use crate::ast::{Expression, InfixOperator, Literal, Program, Statement, UnaryOp
 
 use self::{
     callable::{Callable, CallableFunction},
+    class::{Class, Instance},
     scope::{Declarable, Scope},
 };
-
-#[derive(Debug)]
-pub struct Class {
-    pub name: String,
-    pub methods: HashMap<String, CallableFunction>,
-}
-
-#[derive(Debug)]
-pub struct Instance {
-    class: Rc<Class>,
-    fields: HashMap<String, Value>,
-}
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -113,6 +102,7 @@ pub enum ExecutionErrorKind {
     GetOnNonInstance(String),
     SetOnNonInstance(String),
     UndefinedProperty(String),
+    NotAClass(String),
 }
 
 impl Interpreter {
@@ -223,8 +213,9 @@ impl Interpreter {
                 };
                 result
             }
-            Statement::ClassDeclaration(name, methods) => {
-                let methods = methods
+            Statement::ClassDeclaration(class_decl) => {
+                let methods = class_decl
+                    .methods
                     .iter()
                     .map(|method| {
                         let scope = self.scope.clone();
@@ -237,10 +228,33 @@ impl Interpreter {
                     })
                     .collect();
 
+                let superclass = if let Some(superclass) = &class_decl.superclass {
+                    let Expression::Identifier {
+                        name: superclass_name,
+                        scope_depth,
+                    } = superclass
+                    else {
+                        panic!("Superclass must be an identifier.");
+                    };
+
+                    let superclass =
+                        match Scope::get_at(self.scope.clone(), *scope_depth, superclass_name) {
+                            Some(Declarable::Class(c)) => c,
+                            _ => {
+                                return Err(ExecutionErrorKind::NotAClass(superclass_name.clone()))
+                            }
+                        };
+
+                    Some(superclass)
+                } else {
+                    None
+                };
+
                 self.scope.borrow_mut().declare(
-                    name.clone(),
+                    class_decl.name.clone(),
                     Declarable::Class(Rc::new(Class {
-                        name: name.clone(),
+                        name: class_decl.name.clone(),
+                        superclass,
                         methods,
                     })),
                 )?;
@@ -414,7 +428,7 @@ impl Interpreter {
                             return Ok(value.clone());
                         }
 
-                        if let Some(method) = instance.borrow().class.methods.get(name) {
+                        if let Some(method) = instance.borrow().class.find_method(name) {
                             return Ok(Value::Closure(Callable::Function(method.bind(&instance)?)));
                         }
 

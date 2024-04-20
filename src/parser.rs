@@ -1,7 +1,10 @@
 use std::cell::RefCell;
 
 use crate::{
-    ast::{Expression, Function, InfixOperator, Literal, Program, Statement, UnaryOperator},
+    ast::{
+        ClassDecl, Expression, FunctionDecl, InfixOperator, Literal, Program, Statement,
+        UnaryOperator,
+    },
     resolver::Resolver,
     tokenizer::{Token, TokenType},
 };
@@ -187,7 +190,19 @@ fn class_declaration<'a>(
     tokens: &'a [Token],
 ) -> Result<(Statement, &'a [Token]), ParseErrorWithContext> {
     let _guard = context.push("class_declaration");
-    let (name, tokens) = match_identifier(context, tokens)?;
+    let (name, mut tokens) = match_identifier(context, tokens)?;
+
+    let superclass = if tokens.first().map(Token::token_type) == Some(&TokenType::Less) {
+        let (superclass, rest) = match_identifier(context, &tokens[1..])?;
+        tokens = rest;
+        Some(Expression::Identifier {
+            name: superclass,
+            scope_depth: 0,
+        })
+    } else {
+        None
+    };
+
     let mut tokens = consume(context, tokens, TokenType::LeftBrace)?;
 
     let mut methods = Vec::new();
@@ -198,7 +213,14 @@ fn class_declaration<'a>(
 
     let tokens = consume(context, tokens, TokenType::RightBrace)?;
 
-    Ok((Statement::ClassDeclaration(name, methods), tokens))
+    Ok((
+        Statement::ClassDeclaration(ClassDecl {
+            name,
+            superclass,
+            methods,
+        }),
+        tokens,
+    ))
 }
 
 fn var_declaration<'a>(
@@ -250,7 +272,7 @@ fn return_statement<'a>(
 fn function_declaration<'a>(
     context: &ParseContext,
     tokens: &'a [Token],
-) -> Result<(Function, &'a [Token]), ParseErrors> {
+) -> Result<(FunctionDecl, &'a [Token]), ParseErrors> {
     let _guard = context.push("function");
     let (name, tokens) = match_identifier(context, tokens)?;
     let tokens = consume(context, tokens, TokenType::LeftParen)?;
@@ -258,7 +280,7 @@ fn function_declaration<'a>(
     let tokens = consume(context, tokens, TokenType::LeftBrace)?;
     let (body, tokens) = block(context, tokens)?;
     Ok((
-        Function {
+        FunctionDecl {
             name,
             args,
             body: Box::new(body),
