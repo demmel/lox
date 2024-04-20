@@ -8,7 +8,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::ast::{Expression, Function, InfixOperator, Literal, Program, Statement, UnaryOperator};
+use crate::ast::{Expression, InfixOperator, Literal, Program, Statement, UnaryOperator};
 
 use self::{
     callable::{Callable, CallableFunction},
@@ -205,13 +205,12 @@ impl Interpreter {
                 }
                 res
             }
-            Statement::FunctionDeclaration(Function { name, args, body }) => {
+            Statement::FunctionDeclaration(decl) => {
                 self.scope.borrow_mut().declare(
-                    name.clone(),
+                    decl.name.clone(),
                     Declarable::Function(Callable::Function(CallableFunction {
                         scope: self.scope.clone(),
-                        args: args.to_vec(),
-                        body: (&**body).clone(),
+                        decl: decl.clone(),
                     })),
                 )?;
                 None
@@ -227,17 +226,12 @@ impl Interpreter {
                 let methods = methods
                     .iter()
                     .map(|method| {
-                        let Function { name, args, body } = method;
                         let scope = self.scope.clone();
-                        let name = name.clone();
-                        let args = args.clone();
-                        let body = body.clone();
                         let method = CallableFunction {
                             scope,
-                            args,
-                            body: (&*body).clone(),
+                            decl: method.clone(),
                         };
-                        (name.clone(), method)
+                        (method.decl.name.clone(), method)
                     })
                     .collect();
 

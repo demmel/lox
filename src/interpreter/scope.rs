@@ -136,16 +136,12 @@ impl Debug for Scope {
                             match declarable {
                                 Declarable::Variable(v) => v.clone().to_string(),
                                 Declarable::Function(f) => match f {
-                                    Callable::Function(CallableFunction {
-                                        scope,
-                                        args,
-                                        body: statement,
-                                    }) => {
+                                    Callable::Function(CallableFunction { scope, decl }) => {
                                         format!(
                                             "Function<{:?}>({:?}){}",
                                             scope.as_ptr(),
-                                            args,
-                                            statement
+                                            decl.args,
+                                            decl.body
                                         )
                                     }
                                     Callable::Builtin(closure, arity) => {
