@@ -1,3 +1,6 @@
+use self::scope::{Declarable, Scope};
+use crate::ast::{Expression, Function, InfixOperator, Literal, Program, Statement, UnaryOperator};
+
 mod scope;
 
 use std::{
@@ -6,10 +9,6 @@ use std::{
     fmt::{Debug, Display},
     rc::Rc,
 };
-
-use crate::ast::{Expression, Function, InfixOperator, Literal, Program, Statement, UnaryOperator};
-
-use self::scope::{Declarable, Scope};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -22,8 +21,14 @@ pub enum Value {
 }
 
 #[derive(Debug)]
+pub struct Class {
+    pub name: String,
+    pub methods: HashMap<String, CallableFunction>,
+}
+
+#[derive(Debug)]
 pub struct Instance {
-    class: String,
+    class: Rc<Class>,
     fields: HashMap<String, Value>,
 }
 
@@ -44,7 +49,9 @@ impl Display for Value {
             Value::String(s) => write!(f, "\"{}\"", s),
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Closure(c) => write!(f, "<function {}>", c.arity()),
-            Value::Instance(instance) => write!(f, "<instance of {}>", instance.borrow().class),
+            Value::Instance(instance) => {
+                write!(f, "<instance of {}>", instance.borrow().class.name)
+            }
             Value::Nil => write!(f, "nil"),
         }
     }
@@ -95,6 +102,7 @@ pub enum ExecutionErrorKind {
     InvalidNot(Value),
     UndeclaredVariable(String),
     UndeclaredFunction(String),
+    NotAFunction(String),
     InvalidFunctionCall(String, usize, usize),
     CannotReturnFromTopLevel,
     FunctionRedeclaration(String),
@@ -196,11 +204,11 @@ impl Interpreter {
             Statement::FunctionDeclaration(Function { name, args, body }) => {
                 self.scope.borrow_mut().declare(
                     name.clone(),
-                    Declarable::Function(Callable::Function(
-                        self.scope.clone(),
-                        args.to_vec(),
-                        (&**body).clone(),
-                    )),
+                    Declarable::Function(Callable::Function(CallableFunction {
+                        scope: self.scope.clone(),
+                        args: args.to_vec(),
+                        body: (&**body).clone(),
+                    })),
                 )?;
                 None
             }
@@ -214,10 +222,32 @@ impl Interpreter {
                 };
                 result
             }
-            Statement::ClassDeclaration(name, _methods) => {
-                self.scope
-                    .borrow_mut()
-                    .declare(name.clone(), Declarable::Class)?;
+            Statement::ClassDeclaration(name, methods) => {
+                let methods = methods
+                    .iter()
+                    .map(|method| {
+                        let Function { name, args, body } = method;
+                        let scope = self.scope.clone();
+                        let name = name.clone();
+                        let args = args.clone();
+                        let body = body.clone();
+                        let method = CallableFunction {
+                            scope,
+                            args,
+                            body: (&*body).clone(),
+                        };
+                        (name.clone(), method)
+                    })
+                    .collect();
+
+                self.scope.borrow_mut().declare(
+                    name.clone(),
+                    Declarable::Class(Rc::new(Class {
+                        name: name.clone(),
+                        methods,
+                    })),
+                )?;
+
                 None
             }
         };
@@ -244,7 +274,9 @@ impl Interpreter {
             } => match Scope::get_at(self.scope.clone(), *scope_depth, identifier) {
                 Some(Declarable::Variable(v)) => Ok(v.clone()),
                 Some(Declarable::Function(c)) => Ok(Value::Closure(c.clone())),
-                Some(Declarable::Class) => Ok(Value::String(identifier.clone())),
+                Some(Declarable::Class(class)) => {
+                    Ok(Value::Closure(Callable::ClassConstructor(class.clone())))
+                }
                 _ => Err(ExecutionErrorKind::UndeclaredVariable(identifier.clone())),
             },
             Expression::Literal(literal) => match literal {
@@ -360,24 +392,14 @@ impl Interpreter {
                     .ok_or_else(|| ExecutionErrorKind::UndeclaredVariable(name.clone()))
             }
             Expression::Call(expr, args) => {
-                let Expression::Identifier { name, scope_depth } = expr.as_ref() else {
-                    return Err(ExecutionErrorKind::InvalidFunctionCall(
-                        "not an identifier".to_string(),
-                        0,
-                        0,
-                    ));
-                };
-
-                let callable = match Scope::get_at(self.scope.clone(), *scope_depth, name) {
-                    Some(Declarable::Function(callable)) => callable.clone(),
-                    Some(Declarable::Variable(Value::Closure(callable))) => callable.clone(),
-                    Some(Declarable::Class) => Callable::ClassConstructor(name.clone()),
-                    _ => return Err(ExecutionErrorKind::UndeclaredFunction(name.clone())),
+                let value = self.evaluate(expr)?;
+                let Value::Closure(callable) = value else {
+                    return Err(ExecutionErrorKind::NotAFunction(value.to_string()));
                 };
 
                 if args.len() != callable.arity() {
                     return Err(ExecutionErrorKind::InvalidFunctionCall(
-                        name.clone(),
+                        callable.to_string(),
                         args.len(),
                         callable.arity(),
                     ));
@@ -390,12 +412,17 @@ impl Interpreter {
             Expression::Get(expr, name) => {
                 let instance = self.evaluate(expr)?;
                 match instance {
-                    Value::Instance(instance) => Ok(instance
-                        .borrow()
-                        .fields
-                        .get(name)
-                        .cloned()
-                        .ok_or(ExecutionErrorKind::UndefinedProperty(name.clone()))?),
+                    Value::Instance(instance) => {
+                        if let Some(value) = instance.borrow().fields.get(name) {
+                            return Ok(value.clone());
+                        }
+
+                        if let Some(method) = instance.borrow().class.methods.get(name) {
+                            return Ok(Value::Closure(Callable::Function(method.bind(&instance)?)));
+                        }
+
+                        Err(ExecutionErrorKind::UndefinedProperty(name.clone()))
+                    }
                     _ => Err(ExecutionErrorKind::GetOnNonInstance(instance.to_string())),
                 }
             }
@@ -413,16 +440,76 @@ impl Interpreter {
                     _ => Err(ExecutionErrorKind::SetOnNonInstance(instance.to_string())),
                 }
             }
+            Expression::This(scope_depth) => {
+                let this = Scope::get_at(self.scope.clone(), *scope_depth, "this");
+                match this {
+                    Some(Declarable::Variable(v)) => Ok(v.clone()),
+                    Some(Declarable::Function(c)) => Ok(Value::Closure(c.clone())),
+                    Some(Declarable::Class(class)) => {
+                        Ok(Value::Closure(Callable::ClassConstructor(class.clone())))
+                    }
+                    _ => Err(ExecutionErrorKind::UndeclaredVariable("this".to_string())),
+                }
+            }
         }?;
+
         Ok(res)
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum Callable {
-    Function(Rc<RefCell<Scope>>, Vec<String>, Statement),
+    Function(CallableFunction),
     Builtin(fn(&[Value]) -> Result<Value, ExecutionErrorKind>, usize),
-    ClassConstructor(String),
+    ClassConstructor(Rc<Class>),
+}
+
+#[derive(Debug, Clone)]
+pub struct CallableFunction {
+    scope: Rc<RefCell<Scope>>,
+    args: Vec<String>,
+    body: Statement,
+}
+
+impl CallableFunction {
+    fn bind(&self, instance: &Rc<RefCell<Instance>>) -> Result<Self, ExecutionErrorKind> {
+        let scope = Scope::boxed(Some(self.scope.clone()), false);
+        scope.borrow_mut().declare(
+            "this".to_string(),
+            Declarable::Variable(Value::Instance(instance.clone())),
+        )?;
+        Ok(Self {
+            scope,
+            args: self.args.clone(),
+            body: self.body.clone(),
+        })
+    }
+
+    fn call(
+        &self,
+        interpreter: &mut Interpreter,
+        args: &[Expression],
+    ) -> Result<Value, ExecutionErrorKind> {
+        let evaluated_args = args
+            .iter()
+            .map(|arg| interpreter.evaluate(arg))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let res = interpreter.execute_in_scope(
+            Scope::boxed(Some(self.scope.clone()), true),
+            |interpreter| {
+                for (arg_name, evaluated_arg) in self.args.iter().zip(evaluated_args.into_iter()) {
+                    interpreter
+                        .scope
+                        .borrow_mut()
+                        .declare(arg_name.clone(), Declarable::Variable(evaluated_arg))?;
+                }
+                Ok(interpreter.execute(&self.body)?.unwrap_or(Value::Nil))
+            },
+        )?;
+
+        Ok(res)
+    }
 }
 
 impl Callable {
@@ -432,47 +519,41 @@ impl Callable {
         args: &[Expression],
     ) -> Result<Value, ExecutionErrorKind> {
         match self {
-            Callable::Function(scope, arg_names, body) => {
-                let evaluated_args = args
-                    .iter()
-                    .map(|arg| interpreter.evaluate(arg))
-                    .collect::<Result<Vec<_>, _>>()?;
-
-                let res = interpreter.execute_in_scope(
-                    Scope::boxed(Some(scope.clone()), true),
-                    |interpreter| {
-                        for (arg_name, evaluated_arg) in
-                            arg_names.iter().zip(evaluated_args.into_iter())
-                        {
-                            interpreter
-                                .scope
-                                .borrow_mut()
-                                .declare(arg_name.clone(), Declarable::Variable(evaluated_arg))?;
-                        }
-                        Ok(interpreter.execute(body)?.unwrap_or(Value::Nil))
-                    },
-                )?;
-
-                Ok(res)
-            }
+            Callable::Function(callable_function) => callable_function.call(interpreter, args),
             Callable::Builtin(f, _) => f(&args
                 .iter()
                 .map(|arg| interpreter.evaluate(arg))
                 .collect::<Result<Vec<_>, _>>()?),
             Callable::ClassConstructor(class) => {
-                Ok(Value::Instance(Rc::new(RefCell::new(Instance {
+                let instance = Rc::new(RefCell::new(Instance {
                     class: class.clone(),
                     fields: HashMap::new(),
-                }))))
+                }));
+                if let Some(init) = class.methods.get("init") {
+                    init.bind(&instance)?.call(interpreter, args)?;
+                }
+                Ok(Value::Instance(instance))
             }
         }
     }
 
     fn arity(&self) -> usize {
         match self {
-            Callable::Function(_, args, _) => args.len(),
+            Callable::Function(callable_function) => callable_function.args.len(),
             Callable::Builtin(_, arity) => *arity,
             Callable::ClassConstructor(_) => 0,
+        }
+    }
+}
+
+impl Display for Callable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Callable::Function(callable_function) => {
+                write!(f, "<function {}>", callable_function.args.len())
+            }
+            Callable::Builtin(_, arity) => write!(f, "<builtin function {}>", arity),
+            Callable::ClassConstructor(class) => write!(f, "<class {}>", class.name),
         }
     }
 }

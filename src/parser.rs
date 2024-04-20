@@ -694,6 +694,7 @@ fn primary<'a>(
             },
             &tokens[1..],
         )),
+        TokenType::This => Ok((Expression::This(0), &tokens[1..])),
         token_type => Err(ParseErrorWithContext {
             error: ParseError::Unexpected(token_type.clone()),
             context: context.clone(),

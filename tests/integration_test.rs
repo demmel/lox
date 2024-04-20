@@ -66,3 +66,24 @@ fn test_functions_cant_break_scope() {
     let expected_output = "\"global\"\n\"global\"\n";
     test_valid_program(source, expected_output);
 }
+
+#[test]
+fn test_classes() {
+    let source = r#"
+    class Counter {
+        init() {
+            this.cnt = 0;
+        }
+        count() {
+            this.cnt = this.cnt + 1;
+            return this.cnt;
+        }
+    }
+    
+    var counter = Counter();
+    print counter.count(); // 1
+    print counter.count(); // 2
+    "#;
+    let expected_output = "1\n2\n";
+    test_valid_program(source, expected_output);
+}

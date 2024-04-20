@@ -41,6 +41,7 @@ pub enum Expression {
     Call(Box<Expression>, Vec<Expression>),
     Get(Box<Expression>, String),
     Set(Box<Expression>, String, Box<Expression>),
+    This(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -166,6 +167,13 @@ impl Display for Expression {
             }
             Expression::Get(expr, name) => write!(f, "{}.{}", expr, name),
             Expression::Set(expr, name, value) => write!(f, "{}.{} = {}", expr, name, value),
+            Expression::This(scope_depth) => {
+                if *scope_depth == 0 {
+                    write!(f, "this")
+                } else {
+                    write!(f, "scope[{}].this", scope_depth)
+                }
+            }
         }
     }
 }

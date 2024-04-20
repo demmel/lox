@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, thread::scope};
 
 use crate::ast::{Expression, Function, Program, Statement};
 
@@ -6,6 +6,11 @@ use crate::ast::{Expression, Function, Program, Statement};
 enum BindingState {
     Declared,
     Defined,
+}
+
+enum FunctionType {
+    Function,
+    Method,
 }
 
 pub struct Resolver {
@@ -47,7 +52,7 @@ impl Resolver {
             }) => {
                 self.declare(name.clone());
                 self.define(name.clone());
-                self.resolve_function(parameters, body.as_mut());
+                self.resolve_function(parameters, body.as_mut(), FunctionType::Function);
             }
             Statement::Print(expression) => self.resolve_expression(expression),
             Statement::If(condition, then_branch, else_branch) => {
@@ -66,9 +71,27 @@ impl Resolver {
                     self.resolve_expression(expression);
                 }
             }
-            Statement::ClassDeclaration(name, _methods) => {
+            Statement::ClassDeclaration(name, methods) => {
                 self.declare(name.clone());
                 self.define(name.clone());
+
+                self.begin_scope();
+
+                self.scopes
+                    .last_mut()
+                    .unwrap()
+                    .insert("this".to_string(), BindingState::Defined);
+
+                for method in methods {
+                    let Function {
+                        args: parameters,
+                        body,
+                        ..
+                    } = method;
+                    self.resolve_function(parameters, body.as_mut(), FunctionType::Method);
+                }
+
+                self.end_scope();
             }
         }
     }
@@ -114,6 +137,9 @@ impl Resolver {
                 self.resolve_expression(expr);
                 self.resolve_expression(value);
             }
+            Expression::This(scope_depth) => {
+                self.resolve_local("this", scope_depth);
+            }
         }
     }
 
@@ -126,7 +152,12 @@ impl Resolver {
         }
     }
 
-    fn resolve_function(&mut self, parameters: &[String], body: &mut Statement) {
+    fn resolve_function(
+        &mut self,
+        parameters: &[String],
+        body: &mut Statement,
+        function_type: FunctionType,
+    ) {
         self.begin_scope();
         for parameter in parameters {
             self.declare(parameter.clone());

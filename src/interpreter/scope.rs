@@ -5,13 +5,13 @@ use std::{
     rc::Rc,
 };
 
-use super::{Callable, ExecutionErrorKind, Value};
+use super::{Callable, CallableFunction, Class, ExecutionErrorKind, Value};
 
 #[derive(Debug, Clone)]
 pub enum Declarable {
     Variable(Value),
     Function(Callable),
-    Class,
+    Class(Rc<Class>),
 }
 
 #[derive(Clone)]
@@ -133,7 +133,11 @@ impl Debug for Scope {
                             match declarable {
                                 Declarable::Variable(v) => v.clone().to_string(),
                                 Declarable::Function(f) => match f {
-                                    Callable::Function(scope, args, statement) => {
+                                    Callable::Function(CallableFunction {
+                                        scope,
+                                        args,
+                                        body: statement,
+                                    }) => {
                                         format!(
                                             "Function<{:?}>({:?}){}",
                                             scope.as_ptr(),
@@ -148,13 +152,15 @@ impl Debug for Scope {
                                         format!("ClassConstructor<{:?}>", class)
                                     }
                                 },
-                                Declarable::Class => "Class".to_string(),
+                                Declarable::Class(class) => {
+                                    format!("Class({})", class.name)
+                                }
                             },
                         )
                     })
                     .collect::<Vec<_>>(),
             )
-            .field("parent", &self.parent.as_ref().map(|p| p.as_ptr()))
+            // .field("parent", &self.parent.as_ref().map(|p| p.as_ptr()))
             .field("is_function", &self.is_function)
             .finish()
     }
