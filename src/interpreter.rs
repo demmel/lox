@@ -109,7 +109,6 @@ pub enum ExecutionErrorKind {
     UndeclaredFunction(String),
     NotAFunction(String),
     InvalidFunctionCall(String, usize, usize),
-    CannotReturnFromTopLevel,
     FunctionRedeclaration(String),
     GetOnNonInstance(String),
     SetOnNonInstance(String),
@@ -218,9 +217,6 @@ impl Interpreter {
                 None
             }
             Statement::Return(expression) => {
-                if !self.scope.borrow().is_in_function() {
-                    return Err(ExecutionErrorKind::CannotReturnFromTopLevel);
-                }
                 let mut result = Some(Value::Nil);
                 if let Some(expression) = expression {
                     result = Some(self.evaluate(expression)?);

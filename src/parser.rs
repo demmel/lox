@@ -55,6 +55,8 @@ impl std::fmt::Display for ParseErrorWithContext {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
+    #[error("Resolver error: {0}")]
+    ResolverError(#[from] crate::resolver::ResolverError),
     #[error("Expected \"{0}\"")]
     Expected(TokenType),
     #[error("Expected one of {0:?}")]
@@ -142,7 +144,13 @@ pub fn program(tokens: &[Token]) -> Result<Program, ParseErrors> {
 
     let mut program = Program(statments);
 
-    Resolver::new().resolve(&mut program);
+    Resolver::new()
+        .resolve(&mut program)
+        .map_err(|e| ParseErrorWithContext {
+            error: ParseError::ResolverError(e),
+            context: context.clone(),
+            token: None,
+        })?;
 
     Ok(program)
 }
