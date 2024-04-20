@@ -5,10 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use super::{
-    callable::{Callable, CallableFunction},
-    Class, ExecutionErrorKind, Value,
-};
+use super::{callable::Callable, Class, ExecutionErrorKind, Value};
 
 #[derive(Debug, Clone)]
 pub enum Declarable {
@@ -125,41 +122,8 @@ impl Scope {
 impl Debug for Scope {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(format!("Scope<{:?}>", std::ptr::from_ref(self)).as_str())
-            .field(
-                "declarables",
-                &self
-                    .declarables
-                    .iter()
-                    .map(|(name, declarable)| {
-                        (
-                            name.clone(),
-                            match declarable {
-                                Declarable::Variable(v) => v.clone().to_string(),
-                                Declarable::Function(f) => match f {
-                                    Callable::Function(CallableFunction { scope, decl }) => {
-                                        format!(
-                                            "Function<{:?}>({:?}){}",
-                                            scope.as_ptr(),
-                                            decl.args,
-                                            decl.body
-                                        )
-                                    }
-                                    Callable::Builtin(closure, arity) => {
-                                        format!("Builtin<{:?}>({})", closure, arity)
-                                    }
-                                    Callable::ClassConstructor(class) => {
-                                        format!("ClassConstructor<{:?}>", class)
-                                    }
-                                },
-                                Declarable::Class(class) => {
-                                    format!("Class({})", class.name)
-                                }
-                            },
-                        )
-                    })
-                    .collect::<Vec<_>>(),
-            )
-            // .field("parent", &self.parent.as_ref().map(|p| p.as_ptr()))
+            .field("declarables", &self.declarables)
+            .field("parent", &self.parent.as_ref().map(|p| p.as_ptr()))
             .field("is_function", &self.is_function)
             .finish()
     }

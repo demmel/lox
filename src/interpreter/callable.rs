@@ -11,6 +11,7 @@ use super::{
 pub struct CallableFunction {
     pub scope: Rc<RefCell<Scope>>,
     pub decl: Function,
+    pub is_initializer: bool,
 }
 
 impl CallableFunction {
@@ -23,6 +24,7 @@ impl CallableFunction {
         Ok(Self {
             scope,
             decl: self.decl.clone(),
+            is_initializer: self.is_initializer,
         })
     }
 

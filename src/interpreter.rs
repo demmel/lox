@@ -211,6 +211,7 @@ impl Interpreter {
                     Declarable::Function(Callable::Function(CallableFunction {
                         scope: self.scope.clone(),
                         decl: decl.clone(),
+                        is_initializer: false,
                     })),
                 )?;
                 None
@@ -230,6 +231,7 @@ impl Interpreter {
                         let method = CallableFunction {
                             scope,
                             decl: method.clone(),
+                            is_initializer: method.name == "init",
                         };
                         (method.decl.name.clone(), method)
                     })
