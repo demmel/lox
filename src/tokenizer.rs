@@ -126,6 +126,17 @@ struct TokenizerState<'a> {
     column: usize,
 }
 
+impl TokenizerState<'_> {
+    fn make_span(&self, start: usize, end: usize) -> Span {
+        Span {
+            start_line: self.line,
+            start_column: self.column + start,
+            end_line: self.line,
+            end_column: self.column + end,
+        }
+    }
+}
+
 pub fn tokens(source: &str) -> Result<Vec<Token>, TokenizeError> {
     let mut tokens = Vec::new();
     let mut state = TokenizerState {
@@ -156,12 +167,7 @@ fn token(mut state: TokenizerState) -> Result<(Token, TokenizerState), TokenizeE
         return Ok((
             Token {
                 token_type: TokenType::Eof,
-                span: Span {
-                    start_line: state.line,
-                    start_column: state.column,
-                    end_line: state.line,
-                    end_column: state.column,
-                },
+                span: state.make_span(0, 0),
             },
             state,
         ));
@@ -307,12 +313,7 @@ fn literal<'a>(
         Some((
             Token {
                 token_type,
-                span: Span {
-                    start_line: state.line,
-                    start_column: state.column,
-                    end_line: state.line,
-                    end_column: state.column + count,
-                },
+                span: state.make_span(0, count),
             },
             TokenizerState {
                 remaining: &state.remaining[literal.len()..],
@@ -386,12 +387,7 @@ fn identifier(state: TokenizerState) -> Option<(Token, TokenizerState)> {
         Some((
             Token {
                 token_type: TokenType::Identifier(state.remaining[..len].to_string()),
-                span: Span {
-                    start_line: state.line,
-                    start_column: state.column,
-                    end_line: state.line,
-                    end_column: state.column + count,
-                },
+                span: state.make_span(0, count),
             },
             TokenizerState {
                 remaining: &state.remaining[len..],
@@ -420,12 +416,7 @@ fn string(state: TokenizerState) -> Option<(Token, TokenizerState)> {
                 return Some((
                     Token {
                         token_type: TokenType::String(state.remaining[1..len - 1].to_string()),
-                        span: Span {
-                            start_line: state.line,
-                            start_column: state.column,
-                            end_line: state.line,
-                            end_column: state.column + count,
-                        },
+                        span: state.make_span(0, count),
                     },
                     TokenizerState {
                         remaining: &state.remaining[len..],
@@ -476,12 +467,7 @@ fn number(state: TokenizerState) -> Option<(Token, TokenizerState)> {
         Some((
             Token {
                 token_type: TokenType::Number(state.remaining[..len].parse().unwrap()),
-                span: Span {
-                    start_line: state.line,
-                    start_column: state.column,
-                    end_line: state.line,
-                    end_column: state.column + count,
-                },
+                span: state.make_span(0, count),
             },
             TokenizerState {
                 remaining: &state.remaining[len..],
