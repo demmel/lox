@@ -214,20 +214,6 @@ impl Interpreter {
                 result
             }
             Statement::ClassDeclaration(class_decl) => {
-                let methods = class_decl
-                    .methods
-                    .iter()
-                    .map(|method| {
-                        let scope = self.scope.clone();
-                        let method = CallableFunction {
-                            scope,
-                            decl: method.clone(),
-                            is_initializer: method.name == "init",
-                        };
-                        (method.decl.name.clone(), method)
-                    })
-                    .collect();
-
                 let superclass = if let Some(superclass) = &class_decl.superclass {
                     let Expression::Identifier {
                         name: superclass_name,
@@ -249,6 +235,27 @@ impl Interpreter {
                 } else {
                     None
                 };
+
+                let scope = Scope::boxed(Some(self.scope.clone()), false);
+                if let Some(superclass) = superclass.as_ref() {
+                    scope
+                        .borrow_mut()
+                        .declare("super".to_string(), Declarable::Class(superclass.clone()))?;
+                }
+
+                let methods = class_decl
+                    .methods
+                    .iter()
+                    .map(|method| {
+                        let scope = scope.clone();
+                        let method = CallableFunction {
+                            scope,
+                            decl: method.clone(),
+                            is_initializer: method.name == "init",
+                        };
+                        (method.decl.name.clone(), method)
+                    })
+                    .collect();
 
                 self.scope.borrow_mut().declare(
                     class_decl.name.clone(),
@@ -460,6 +467,34 @@ impl Interpreter {
                         Ok(Value::Closure(Callable::ClassConstructor(class.clone())))
                     }
                     _ => Err(ExecutionErrorKind::UndeclaredVariable("this".to_string())),
+                }
+            }
+            Expression::Super(method, scope_depth) => {
+                let sup = Scope::get_at(self.scope.clone(), *scope_depth, "super");
+                match sup {
+                    Some(Declarable::Class(class)) => {
+                        let method = class.find_method(method).ok_or_else(|| {
+                            ExecutionErrorKind::UndeclaredFunction(method.clone())
+                        })?;
+                        let this = Scope::get_at(self.scope.clone(), *scope_depth - 1, "this")
+                            .ok_or_else(|| {
+                                ExecutionErrorKind::UndeclaredVariable("this super".to_string())
+                            })?;
+                        let this = match this {
+                            Declarable::Variable(v) => v.clone(),
+                            _ => Err(ExecutionErrorKind::UndeclaredVariable(
+                                "this super".to_string(),
+                            ))?,
+                        };
+                        let this = match this {
+                            Value::Instance(instance) => instance,
+                            _ => Err(ExecutionErrorKind::UndeclaredVariable(
+                                "this super".to_string(),
+                            ))?,
+                        };
+                        Ok(Value::Closure(Callable::Function(method.bind(&this)?)))
+                    }
+                    _ => Err(ExecutionErrorKind::UndeclaredVariable("super".to_string())),
                 }
             }
         }?;

@@ -49,6 +49,7 @@ pub enum Expression {
     Get(Box<Expression>, String),
     Set(Box<Expression>, String, Box<Expression>),
     This(usize),
+    Super(String, usize),
 }
 
 #[derive(Debug, Clone)]
@@ -187,6 +188,13 @@ impl Display for Expression {
                     write!(f, "this")
                 } else {
                     write!(f, "scope[{}].this", scope_depth)
+                }
+            }
+            Expression::Super(method, scope_depth) => {
+                if *scope_depth == 0 {
+                    write!(f, "super.{}", method)
+                } else {
+                    write!(f, "scope[{}].super.{}", scope_depth, method)
                 }
             }
         }

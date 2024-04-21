@@ -21,6 +21,7 @@ enum FunctionType {
 enum ClassType {
     None,
     Class,
+    Subclass,
 }
 
 pub struct Resolver {
@@ -41,6 +42,10 @@ pub enum ResolverError {
     CannotReadLocalVariableInItsOwnInitializer,
     #[error("Cannot inherit from itself.")]
     CannotInheritFromItself,
+    #[error("Cannot use 'super' outside of a class.")]
+    SuperOutsideClass,
+    #[error("Cannot use 'super' in a class with no superclass.")]
+    SuperWithNoSuperclass,
 }
 
 impl Resolver {
@@ -117,7 +122,9 @@ impl Resolver {
                 let enclosing_class = self.class_type;
                 self.class_type = ClassType::Class;
 
-                if let Some(superclass) = &mut class_decl.superclass {
+                let superclass = if let Some(superclass) = &mut class_decl.superclass {
+                    self.class_type = ClassType::Subclass;
+
                     let Expression::Identifier { name, .. } = &superclass else {
                         panic!("Superclass must be an identifier.");
                     };
@@ -125,6 +132,18 @@ impl Resolver {
                         return Err(ResolverError::CannotInheritFromItself);
                     }
                     self.resolve_expression(superclass)?;
+
+                    Some(superclass.clone())
+                } else {
+                    None
+                };
+
+                if superclass.is_some() {
+                    self.begin_scope();
+                    self.scopes
+                        .last_mut()
+                        .unwrap()
+                        .insert("super".to_string(), BindingState::Defined);
                 }
 
                 self.begin_scope();
@@ -140,6 +159,7 @@ impl Resolver {
                         body,
                         ..
                     } = method;
+
                     self.resolve_function(
                         parameters,
                         body.as_mut(),
@@ -152,6 +172,10 @@ impl Resolver {
                 }
 
                 self.end_scope();
+
+                if superclass.is_some() {
+                    self.end_scope();
+                }
 
                 self.class_type = enclosing_class;
             }
@@ -202,10 +226,19 @@ impl Resolver {
                 self.resolve_expression(value)?;
             }
             Expression::This(scope_depth) => {
-                if matches!(self.class_type, ClassType::None) {
-                    return Err(ResolverError::ThisOutsideClass);
+                match self.class_type {
+                    ClassType::None => return Err(ResolverError::ThisOutsideClass),
+                    _ => {}
                 }
                 self.resolve_local("this", scope_depth);
+            }
+            Expression::Super(_method, scope_depth) => {
+                match self.class_type {
+                    ClassType::None => return Err(ResolverError::SuperOutsideClass),
+                    ClassType::Class => return Err(ResolverError::SuperWithNoSuperclass),
+                    ClassType::Subclass => {}
+                }
+                self.resolve_local("super", scope_depth);
             }
         };
 

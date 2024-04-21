@@ -87,3 +87,34 @@ fn test_classes() {
     let expected_output = "1\n2\n";
     test_valid_program(source, expected_output);
 }
+
+#[test]
+fn test_inheritance() {
+    let source = r#"
+    class Counter {
+        init() {
+            this.cnt = 0;
+        }
+        count() {
+            this.cnt = this.cnt + 1;
+            return this.cnt;
+        }
+    }
+    
+    class DecCounter < Counter {
+        init() {
+            super.init();
+        }
+        count() {
+            this.cnt = this.cnt - 1;
+            return this.cnt;
+        }
+    }
+    
+    var counter = DecCounter();
+    print counter.count(); // -1
+    print counter.count(); // -2
+    "#;
+    let expected_output = "-1\n-2\n";
+    test_valid_program(source, expected_output);
+}
