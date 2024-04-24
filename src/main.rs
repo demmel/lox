@@ -3,7 +3,10 @@ use std::io::Write;
 use clap::{Args, Parser, Subcommand};
 use justerror::Error;
 
-use lox::interpreter::Interpreter;
+use lox::{
+    bytecode::{self},
+    interpreter::Interpreter,
+};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -23,6 +26,7 @@ enum Command {
     Repl,
     Expand(ExpandArgs),
     Benchmark,
+    Disassemble,
 }
 
 #[derive(Debug, Args)]
@@ -60,6 +64,9 @@ fn runner() -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Benchmark => {
             benchmark_command()?;
+        }
+        Command::Disassemble => {
+            disassemble_command()?;
         }
     }
 
@@ -179,4 +186,9 @@ fn fib(n: i64) -> i64 {
         return n;
     }
     return fib(n - 1) + fib(n - 2);
+}
+
+fn disassemble_command() -> Result<(), Box<dyn std::error::Error>> {
+    bytecode::test_chunk();
+    Ok(())
 }
