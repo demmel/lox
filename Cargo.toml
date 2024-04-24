@@ -9,3 +9,6 @@ edition = "2021"
 clap = { version = "4.5.4", features = ["derive"] }
 justerror = "1.1.0"
 thiserror = "1.0.58"
+
+[profile.release]
+debug = true

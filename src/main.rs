@@ -134,7 +134,7 @@ fn expand_command(args: &ExpandArgs) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn benchmark_command() -> Result<(), Box<dyn std::error::Error>> {
-    let source = std::fs::read_to_string("lox_examples/fib.lox")?;
+    let source = lox_fib_source();
     let tokens = lox::tokenizer::tokens(&source)?;
     let program = lox::parser::program(&tokens)?;
     let mut interpreter = Interpreter::default();
@@ -145,7 +145,7 @@ fn benchmark_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("Lox Took: {:?}", lox_elapsed);
 
     let start = std::time::Instant::now();
-    println!("{}", fib(40));
+    rust_fib();
     let fib_elapsed = start.elapsed();
     println!("Fib Took: {:?}", fib_elapsed);
 
@@ -155,6 +155,23 @@ fn benchmark_command() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Ok(())
+}
+
+fn lox_fib_source() -> &'static str {
+    r#"
+    fun fib(n) {
+        if (n <= 1) {
+            return n;
+        }
+        return fib(n-1) + fib(n-2);
+    }
+        
+    print fib(40);
+    "#
+}
+
+fn rust_fib() {
+    println!("{}", fib(40));
 }
 
 fn fib(n: i64) -> i64 {
