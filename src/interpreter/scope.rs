@@ -10,7 +10,7 @@ use super::{callable::Callable, Class, ExecutionErrorKind, Value};
 #[derive(Debug, Clone)]
 pub enum Declarable {
     Variable(Value),
-    Function(Callable),
+    Function(Rc<Callable>),
     Class(Rc<Class>),
 }
 

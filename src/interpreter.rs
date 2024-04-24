@@ -21,7 +21,7 @@ pub enum Value {
     Number(f64),
     String(String),
     Boolean(bool),
-    Closure(Callable),
+    Closure(Rc<Callable>),
     Instance(Rc<RefCell<Instance>>),
     Nil,
 }
@@ -113,7 +113,7 @@ impl Interpreter {
             .borrow_mut()
             .declare(
                 "clock".to_string(),
-                Declarable::Function(Callable::Builtin(
+                Declarable::Function(Rc::new(Callable::Builtin(
                     |_: &[Value]| {
                         Ok(Value::Number(
                             std::time::SystemTime::now()
@@ -123,7 +123,7 @@ impl Interpreter {
                         ))
                     },
                     0,
-                )),
+                ))),
             )
             .expect("Builtin functions should not fail to declare");
 
@@ -198,11 +198,11 @@ impl Interpreter {
             Statement::FunctionDeclaration(decl) => {
                 self.scope.borrow_mut().declare(
                     decl.name.clone(),
-                    Declarable::Function(Callable::Function(CallableFunction {
+                    Declarable::Function(Rc::new(Callable::Function(CallableFunction {
                         scope: self.scope.clone(),
                         decl: decl.clone(),
                         is_initializer: false,
-                    })),
+                    }))),
                 )?;
                 None
             }
@@ -292,9 +292,9 @@ impl Interpreter {
             } => match Scope::get_at(self.scope.clone(), *scope_depth, identifier) {
                 Some(Declarable::Variable(v)) => Ok(v.clone()),
                 Some(Declarable::Function(c)) => Ok(Value::Closure(c.clone())),
-                Some(Declarable::Class(class)) => {
-                    Ok(Value::Closure(Callable::ClassConstructor(class.clone())))
-                }
+                Some(Declarable::Class(class)) => Ok(Value::Closure(Rc::new(
+                    Callable::ClassConstructor(class.clone()),
+                ))),
                 _ => Err(ExecutionErrorKind::UndeclaredVariable(identifier.clone())),
             },
             Expression::Literal(literal) => match literal {
@@ -436,7 +436,9 @@ impl Interpreter {
                         }
 
                         if let Some(method) = instance.borrow().class.find_method(name) {
-                            return Ok(Value::Closure(Callable::Function(method.bind(&instance)?)));
+                            return Ok(Value::Closure(Rc::new(Callable::Function(
+                                method.bind(&instance)?,
+                            ))));
                         }
 
                         Err(ExecutionErrorKind::UndefinedProperty(name.clone()))
@@ -463,9 +465,9 @@ impl Interpreter {
                 match this {
                     Some(Declarable::Variable(v)) => Ok(v.clone()),
                     Some(Declarable::Function(c)) => Ok(Value::Closure(c.clone())),
-                    Some(Declarable::Class(class)) => {
-                        Ok(Value::Closure(Callable::ClassConstructor(class.clone())))
-                    }
+                    Some(Declarable::Class(class)) => Ok(Value::Closure(Rc::new(
+                        Callable::ClassConstructor(class.clone()),
+                    ))),
                     _ => Err(ExecutionErrorKind::UndeclaredVariable("this".to_string())),
                 }
             }
@@ -492,7 +494,9 @@ impl Interpreter {
                                 "this super".to_string(),
                             ))?,
                         };
-                        Ok(Value::Closure(Callable::Function(method.bind(&this)?)))
+                        Ok(Value::Closure(Rc::new(Callable::Function(
+                            method.bind(&this)?,
+                        ))))
                     }
                     _ => Err(ExecutionErrorKind::UndeclaredVariable("super".to_string())),
                 }
