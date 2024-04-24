@@ -5,7 +5,7 @@ use justerror::Error;
 
 use lox::{
     bytecode::{self},
-    interpreter::Interpreter,
+    tree_walk_interpreter::Interpreter,
 };
 
 #[derive(Debug, Parser)]
@@ -78,7 +78,7 @@ enum ReplCommandError {
     Io(#[from] std::io::Error),
     Tokenize(#[from] lox::tokenizer::TokenizeError),
     Parse(#[from] lox::parser::ParseErrors),
-    Interpret(#[from] lox::interpreter::ExecutionError),
+    Interpret(#[from] lox::tree_walk_interpreter::ExecutionError),
 }
 
 fn repl_command() -> Result<(), ReplCommandError> {
@@ -118,7 +118,7 @@ enum RuncCommandError {
     Io(#[from] std::io::Error),
     Tokenize(#[from] lox::tokenizer::TokenizeError),
     Parse(#[from] lox::parser::ParseErrors),
-    Interpret(#[from] lox::interpreter::ExecutionError),
+    Interpret(#[from] lox::tree_walk_interpreter::ExecutionError),
 }
 
 fn run_command(args: &RunArgs) -> Result<(), RuncCommandError> {

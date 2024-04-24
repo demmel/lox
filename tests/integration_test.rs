@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use lox::interpreter::Interpreter;
+use lox::tree_walk_interpreter::Interpreter;
 
 fn test_valid_program(source: &str, expected_output: &str) {
     let tokens = lox::tokenizer::tokens(source).expect("Tokenize should work on valid program");
