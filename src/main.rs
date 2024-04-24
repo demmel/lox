@@ -22,6 +22,7 @@ enum Command {
     Run(RunArgs),
     Repl,
     Expand(ExpandArgs),
+    Benchmark,
 }
 
 #[derive(Debug, Args)]
@@ -56,6 +57,9 @@ fn runner() -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Expand(args) => {
             expand_command(args)?;
+        }
+        Command::Benchmark => {
+            benchmark_command()?;
         }
     }
 
@@ -127,4 +131,35 @@ fn expand_command(args: &ExpandArgs) -> Result<(), Box<dyn std::error::Error>> {
     let ast = lox::parser::program(&tokens)?;
     println!("{}", ast);
     Ok(())
+}
+
+fn benchmark_command() -> Result<(), Box<dyn std::error::Error>> {
+    let source = std::fs::read_to_string("lox_examples/fib.lox")?;
+    let tokens = lox::tokenizer::tokens(&source)?;
+    let program = lox::parser::program(&tokens)?;
+    let mut interpreter = Interpreter::default();
+
+    let start = std::time::Instant::now();
+    interpreter.interpret(&program)?;
+    let lox_elapsed = start.elapsed();
+    println!("Lox Took: {:?}", lox_elapsed);
+
+    let start = std::time::Instant::now();
+    println!("{}", fib(40));
+    let fib_elapsed = start.elapsed();
+    println!("Fib Took: {:?}", fib_elapsed);
+
+    println!(
+        "Rust is {}x faster than lox-rs",
+        lox_elapsed.as_secs_f64() / fib_elapsed.as_secs_f64()
+    );
+
+    Ok(())
+}
+
+fn fib(n: i64) -> i64 {
+    if n <= 1 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
 }
