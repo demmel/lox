@@ -3,10 +3,7 @@ use std::io::Write;
 use clap::{Args, Parser, Subcommand};
 use justerror::Error;
 
-use lox::{
-    bytecode::{self},
-    tree_walk_interpreter::Interpreter,
-};
+use lox::{tree_walk_interpreter::Interpreter, vm};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -26,7 +23,7 @@ enum Command {
     Repl,
     Expand(ExpandArgs),
     Benchmark,
-    Disassemble,
+    RunVM,
 }
 
 #[derive(Debug, Args)]
@@ -65,8 +62,8 @@ fn runner() -> Result<(), Box<dyn std::error::Error>> {
         Command::Benchmark => {
             benchmark_command()?;
         }
-        Command::Disassemble => {
-            disassemble_command()?;
+        Command::RunVM => {
+            run_vm()?;
         }
     }
 
@@ -188,7 +185,7 @@ fn fib(n: i64) -> i64 {
     return fib(n - 1) + fib(n - 2);
 }
 
-fn disassemble_command() -> Result<(), Box<dyn std::error::Error>> {
-    bytecode::test_chunk();
+fn run_vm() -> Result<(), Box<dyn std::error::Error>> {
+    vm::main()?;
     Ok(())
 }

@@ -1,8 +1,15 @@
 use std::panic;
 
+use super::Value;
+
 #[repr(u8)]
-enum OpCode {
+pub(super) enum OpCode {
     Constant,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Negate,
     Return,
     Sentinel,
 }
@@ -13,19 +20,24 @@ impl From<OpCode> for u8 {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "Invalid byte {0} found when expecting OpCode value between 0 and {}",
+    OpCode::Sentinel as u8
+)]
+pub struct OpCodeFromU8Error(u8);
+
 impl TryFrom<u8> for OpCode {
-    type Error = ();
+    type Error = OpCodeFromU8Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         if value < OpCode::Sentinel as u8 {
             Ok(unsafe { std::mem::transmute(value) })
         } else {
-            Err(())
+            Err(OpCodeFromU8Error(value))
         }
     }
 }
-
-type Value = f64;
 
 pub struct Chunk {
     code: Vec<u8>,
@@ -42,9 +54,23 @@ impl Chunk {
         }
     }
 
-    pub fn write(&mut self, byte: impl Into<u8>, line: usize) {
+    pub fn get_bytecode(&self, offset: usize) -> u8 {
+        *self
+            .code
+            .get(offset)
+            .expect("VM should only request valid offsets")
+    }
+
+    pub fn add_bytecode(&mut self, byte: impl Into<u8>, line: usize) {
         self.code.push(byte.into());
         self.lines.push(line);
+    }
+
+    pub fn get_cosntant(&self, index: u8) -> Value {
+        *self
+            .constants
+            .get(index as usize)
+            .expect("VM should only request valid constants")
     }
 
     pub fn add_constant(&mut self, value: Value) -> u8 {
@@ -84,6 +110,11 @@ impl Chunk {
                 );
                 offset + 2
             }
+            OpCode::Negate => simple_instruction("OP_NEGATE", offset),
+            OpCode::Add => simple_instruction("OP_ADD", offset),
+            OpCode::Subtract => simple_instruction("OP_SUBTRACT", offset),
+            OpCode::Multiply => simple_instruction("OP_MULTIPLY", offset),
+            OpCode::Divide => simple_instruction("OP_DIVIDE", offset),
             OpCode::Return => simple_instruction("OP_RETURN", offset),
             OpCode::Sentinel => panic!("Sentinel opcode should not be present in bytecode"),
         }
@@ -93,13 +124,4 @@ impl Chunk {
 fn simple_instruction(name: &str, offset: usize) -> usize {
     println!("{}", name);
     offset + 1
-}
-
-pub fn test_chunk() {
-    let mut chunk = Chunk::new();
-    let constant = chunk.add_constant(1.2);
-    chunk.write(OpCode::Constant, 123);
-    chunk.write(constant, 123);
-    chunk.write(OpCode::Return, 123);
-    chunk.disassemble("test chunk");
 }
