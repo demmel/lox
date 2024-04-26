@@ -120,13 +120,27 @@ pub enum TokenizeError {
 }
 
 #[derive(Debug, Clone)]
-struct TokenizerState<'a> {
+pub struct Tokenizer<'a> {
     remaining: &'a str,
     line: usize,
     column: usize,
 }
 
-impl TokenizerState<'_> {
+impl Tokenizer<'_> {
+    pub fn new<'a>(source: &'a str) -> Tokenizer<'a> {
+        Tokenizer {
+            remaining: source,
+            line: 1,
+            column: 1,
+        }
+    }
+
+    pub fn token(&mut self) -> Result<Token, TokenizeError> {
+        let (token, next_state) = token(self.clone())?;
+        *self = next_state;
+        Ok(token)
+    }
+
     fn make_span(&self, start: usize, end: usize) -> Span {
         Span {
             start_line: self.line,
@@ -139,7 +153,7 @@ impl TokenizerState<'_> {
 
 pub fn tokens(source: &str) -> Result<Vec<Token>, TokenizeError> {
     let mut tokens = Vec::new();
-    let mut state = TokenizerState {
+    let mut state = Tokenizer {
         remaining: source,
         line: 1,
         column: 1,
@@ -158,7 +172,7 @@ pub fn tokens(source: &str) -> Result<Vec<Token>, TokenizeError> {
     Ok(tokens)
 }
 
-fn token(mut state: TokenizerState) -> Result<(Token, TokenizerState), TokenizeError> {
+pub fn token(mut state: Tokenizer) -> Result<(Token, Tokenizer), TokenizeError> {
     while let Some((_, next_state)) = maximal(&[whitespace, comment], state.clone()) {
         state = next_state;
     }
@@ -228,9 +242,9 @@ fn token(mut state: TokenizerState) -> Result<(Token, TokenizerState), TokenizeE
 }
 
 fn maximal<'a, T: std::fmt::Debug>(
-    parsers: &[fn(TokenizerState) -> Option<(T, TokenizerState)>],
-    state: TokenizerState<'a>,
-) -> Option<(T, TokenizerState<'a>)> {
+    parsers: &[fn(Tokenizer) -> Option<(T, Tokenizer)>],
+    state: Tokenizer<'a>,
+) -> Option<(T, Tokenizer<'a>)> {
     let mut min_left = state.remaining.len() + 1;
     let mut max_match = None;
 
@@ -246,7 +260,7 @@ fn maximal<'a, T: std::fmt::Debug>(
     max_match
 }
 
-fn whitespace(mut state: TokenizerState) -> Option<((), TokenizerState)> {
+fn whitespace(mut state: Tokenizer) -> Option<((), Tokenizer)> {
     let mut chars = state.remaining.chars();
     let mut len = 0;
     while let Some(c) = chars.next() {
@@ -264,7 +278,7 @@ fn whitespace(mut state: TokenizerState) -> Option<((), TokenizerState)> {
     if len > 0 {
         Some((
             (),
-            TokenizerState {
+            Tokenizer {
                 remaining: &state.remaining[len..],
                 ..state
             },
@@ -274,14 +288,14 @@ fn whitespace(mut state: TokenizerState) -> Option<((), TokenizerState)> {
     }
 }
 
-fn comment(mut state: TokenizerState) -> Option<((), TokenizerState)> {
+fn comment(mut state: Tokenizer) -> Option<((), Tokenizer)> {
     if state.remaining.starts_with("//") {
         let mut chars = state.remaining.chars();
         while let Some(c) = chars.next() {
             if c == '\n' {
                 return Some((
                     (),
-                    TokenizerState {
+                    Tokenizer {
                         remaining: chars.as_str(),
                         line: state.line + 1,
                         column: 1,
@@ -293,7 +307,7 @@ fn comment(mut state: TokenizerState) -> Option<((), TokenizerState)> {
         }
         return Some((
             (),
-            TokenizerState {
+            Tokenizer {
                 remaining: chars.as_str(),
                 ..state
             },
@@ -304,10 +318,10 @@ fn comment(mut state: TokenizerState) -> Option<((), TokenizerState)> {
 }
 
 fn literal<'a>(
-    state: TokenizerState<'a>,
+    state: Tokenizer<'a>,
     literal: &str,
     token_type: TokenType,
-) -> Option<(Token, TokenizerState<'a>)> {
+) -> Option<(Token, Tokenizer<'a>)> {
     if state.remaining.starts_with(literal) {
         let count = literal.chars().count();
         Some((
@@ -315,7 +329,7 @@ fn literal<'a>(
                 token_type,
                 span: state.make_span(0, count),
             },
-            TokenizerState {
+            Tokenizer {
                 remaining: &state.remaining[literal.len()..],
                 column: state.column + count,
                 ..state
@@ -328,7 +342,7 @@ fn literal<'a>(
 
 macro_rules! literal {
     ($name:ident, $literal:expr, $token_type:expr) => {
-        fn $name(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+        fn $name(state: Tokenizer) -> Option<(Token, Tokenizer)> {
             literal(state, $literal, $token_type)
         }
     };
@@ -370,7 +384,7 @@ literal! {true_, "true", TokenType::True}
 literal! {var, "var", TokenType::Var}
 literal! {while_, "while", TokenType::While}
 
-fn identifier(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+fn identifier(state: Tokenizer) -> Option<(Token, Tokenizer)> {
     let mut chars = state.remaining.chars();
 
     let first = chars.next()?;
@@ -389,7 +403,7 @@ fn identifier(state: TokenizerState) -> Option<(Token, TokenizerState)> {
                 token_type: TokenType::Identifier(state.remaining[..len].to_string()),
                 span: state.make_span(0, count),
             },
-            TokenizerState {
+            Tokenizer {
                 remaining: &state.remaining[len..],
                 column: state.column + count,
                 ..state
@@ -400,7 +414,7 @@ fn identifier(state: TokenizerState) -> Option<(Token, TokenizerState)> {
     }
 }
 
-fn string(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+fn string(state: Tokenizer) -> Option<(Token, Tokenizer)> {
     if !state.remaining.starts_with('"') {
         return None;
     }
@@ -418,7 +432,7 @@ fn string(state: TokenizerState) -> Option<(Token, TokenizerState)> {
                         token_type: TokenType::String(state.remaining[1..len - 1].to_string()),
                         span: state.make_span(0, count),
                     },
-                    TokenizerState {
+                    Tokenizer {
                         remaining: &state.remaining[len..],
                         column: state.column + count,
                         ..state
@@ -431,7 +445,7 @@ fn string(state: TokenizerState) -> Option<(Token, TokenizerState)> {
     None
 }
 
-fn number(state: TokenizerState) -> Option<(Token, TokenizerState)> {
+fn number(state: Tokenizer) -> Option<(Token, Tokenizer)> {
     // Valid number types
     // 123
     // 123.456
@@ -469,7 +483,7 @@ fn number(state: TokenizerState) -> Option<(Token, TokenizerState)> {
                 token_type: TokenType::Number(state.remaining[..len].parse().unwrap()),
                 span: state.make_span(0, count),
             },
-            TokenizerState {
+            Tokenizer {
                 remaining: &state.remaining[len..],
                 column: state.column + count,
                 ..state
