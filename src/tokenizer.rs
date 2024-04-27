@@ -75,7 +75,7 @@ impl std::fmt::Display for TokenType {
             TokenType::Less => "<",
             TokenType::LessEqual => "<=",
             TokenType::Identifier(id) => return write!(f, "{id}"),
-            TokenType::String(s) => return write!(f, "\'{s}\""),
+            TokenType::String(s) => return write!(f, "\"{s}\""),
             TokenType::Number(n) => return write!(f, "{n}"),
             TokenType::And => "and",
             TokenType::Class => "class",
