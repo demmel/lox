@@ -10,11 +10,11 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct ParseErrors(Vec<ParseErrorWithContext>);
+pub struct ParseErrors<'a>(Vec<ParseErrorWithContext<'a>>);
 
-impl std::error::Error for ParseErrors {}
+impl std::error::Error for ParseErrors<'_> {}
 
-impl std::fmt::Display for ParseErrors {
+impl std::fmt::Display for ParseErrors<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Found {} errors during parsing", self.0.len())?;
         for error in &self.0 {
@@ -24,20 +24,20 @@ impl std::fmt::Display for ParseErrors {
     }
 }
 
-impl From<ParseErrorWithContext> for ParseErrors {
-    fn from(error: ParseErrorWithContext) -> Self {
+impl<'a> From<ParseErrorWithContext<'a>> for ParseErrors<'a> {
+    fn from(error: ParseErrorWithContext<'a>) -> Self {
         ParseErrors(vec![error])
     }
 }
 
 #[derive(Debug)]
-pub struct ParseErrorWithContext {
+pub struct ParseErrorWithContext<'a> {
     pub error: ParseError,
     context: ParseContext,
-    pub token: Option<Token>,
+    pub token: Option<Token<'a>>,
 }
 
-impl std::fmt::Display for ParseErrorWithContext {
+impl std::fmt::Display for ParseErrorWithContext<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
@@ -46,11 +46,7 @@ impl std::fmt::Display for ParseErrorWithContext {
         )?;
         write!(f, "{}", self.error)?;
         if let Some(token) = &self.token {
-            write!(
-                f,
-                " at {},{} but found \"{}\"",
-                token.span.start_line, token.span.start_column, token.token_type
-            )?;
+            write!(f, " at {} but found \"{}\"", token.line, token.token_type)?;
         }
         Ok(())
     }
@@ -112,7 +108,7 @@ impl<'a> Drop for ParseContextGuard<'a> {
     }
 }
 
-pub fn program(tokens: &[Token]) -> Result<Program, ParseErrors> {
+pub fn program<'a>(tokens: &'a [Token<'a>]) -> Result<Program, ParseErrors<'a>> {
     let context = ParseContext::new();
     let mut statments = Vec::new();
     let mut tokens = tokens;
@@ -158,7 +154,7 @@ pub fn program(tokens: &[Token]) -> Result<Program, ParseErrors> {
     Ok(program)
 }
 
-fn consume_until_after<'a>(tokens: &'a [Token], token_types: &[TokenType]) -> &'a [Token] {
+fn consume_until_after<'a>(tokens: &'a [Token<'a>], token_types: &[TokenType]) -> &'a [Token<'a>] {
     let mut tokens = tokens;
     while let Some(token) = tokens.first() {
         if token_types.iter().any(|t| t == token.token_type()) {
@@ -171,8 +167,8 @@ fn consume_until_after<'a>(tokens: &'a [Token], token_types: &[TokenType]) -> &'
 
 fn declaration<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Statement, &'a [Token]), ParseErrors> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Statement, &'a [Token<'a>]), ParseErrors<'a>> {
     let _guard = context.push("declaration");
     match tokens.first().map(Token::token_type) {
         Some(TokenType::Var) => Ok(var_declaration(context, &tokens[1..])?),
@@ -187,8 +183,8 @@ fn declaration<'a>(
 
 fn class_declaration<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Statement, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Statement, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("class_declaration");
     let (name, mut tokens) = match_identifier(context, tokens)?;
 
@@ -225,8 +221,8 @@ fn class_declaration<'a>(
 
 fn var_declaration<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Statement, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Statement, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("var_declaration");
     let (name, tokens) = match_identifier(context, tokens)?;
     let (expr, tokens) = match tokens.first().map(Token::token_type) {
@@ -239,8 +235,8 @@ fn var_declaration<'a>(
 
 fn statement<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Statement, &'a [Token]), ParseErrors> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Statement, &'a [Token<'a>]), ParseErrors<'a>> {
     let _guard = context.push("statement");
     match tokens.first().map(Token::token_type) {
         Some(TokenType::Print) => Ok(print_statement(context, &tokens[1..])?),
@@ -255,8 +251,8 @@ fn statement<'a>(
 
 fn return_statement<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Statement, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Statement, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("return_statement");
     let (expr, tokens) = match tokens.first().map(Token::token_type) {
         Some(TokenType::Semicolon) => (None, &tokens[1..]),
@@ -271,8 +267,8 @@ fn return_statement<'a>(
 
 fn function_declaration<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(FunctionDecl, &'a [Token]), ParseErrors> {
+    tokens: &'a [Token<'a>],
+) -> Result<(FunctionDecl, &'a [Token<'a>]), ParseErrors<'a>> {
     let _guard = context.push("function");
     let (name, tokens) = match_identifier(context, tokens)?;
     let tokens = consume(context, tokens, TokenType::LeftParen)?;
@@ -291,8 +287,8 @@ fn function_declaration<'a>(
 
 fn while_statement<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Statement, &'a [Token]), ParseErrors> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Statement, &'a [Token<'a>]), ParseErrors<'a>> {
     let _guard = context.push("while_statement");
     let tokens = consume(context, tokens, TokenType::LeftParen)?;
     let (condition, tokens) = expression(context, tokens)?;
@@ -303,8 +299,8 @@ fn while_statement<'a>(
 
 fn if_statement<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Statement, &'a [Token]), ParseErrors> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Statement, &'a [Token<'a>]), ParseErrors<'a>> {
     let _guard = context.push("if_statement");
     let tokens = consume(context, tokens, TokenType::LeftParen)?;
     let (condition, tokens) = expression(context, tokens)?;
@@ -330,8 +326,8 @@ fn if_statement<'a>(
 
 fn for_statement<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Statement, &'a [Token]), ParseErrors> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Statement, &'a [Token<'a>]), ParseErrors<'a>> {
     let _guard = context.push("for_statement");
     let tokens = consume(context, tokens, TokenType::LeftParen)?;
 
@@ -379,8 +375,8 @@ fn for_statement<'a>(
 
 fn block<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Statement, &'a [Token]), ParseErrors> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Statement, &'a [Token<'a>]), ParseErrors<'a>> {
     let _guard = context.push("block");
 
     let mut statements = Vec::new();
@@ -416,8 +412,8 @@ fn block<'a>(
 
 fn expression_statement<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Statement, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Statement, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("expression_statement");
     let (expr, tokens) = expression(context, tokens)?;
     let tokens = consume(context, tokens, TokenType::Semicolon)?;
@@ -426,8 +422,8 @@ fn expression_statement<'a>(
 
 fn print_statement<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Statement, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Statement, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("print_statement");
     let (expr, rest) = expression(context, tokens)?;
     let tokens = consume(context, rest, TokenType::Semicolon)?;
@@ -436,16 +432,16 @@ fn print_statement<'a>(
 
 fn expression<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Expression, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("expression");
     assignment(context, tokens)
 }
 
 fn assignment<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Expression, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("assignment");
     let (mut expr, mut tokens) = logical_or(context, tokens)?;
 
@@ -484,11 +480,11 @@ fn binary<'a>(
     context: &ParseContext,
     precedence: impl Fn(
         &ParseContext,
-        &'a [Token],
-    ) -> Result<(Expression, &'a [Token]), ParseErrorWithContext>,
+        &'a [Token<'a>],
+    ) -> Result<(Expression, &'a [Token<'a>]), ParseErrorWithContext<'a>>,
     operator: impl Fn(&Token) -> Option<InfixOperator>,
-    tokens: &'a [Token],
-) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Expression, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let (mut expr, mut tokens) = precedence(context, tokens)?;
 
     while let Some(token) = tokens.first() {
@@ -507,8 +503,8 @@ fn binary<'a>(
 
 fn logical_or<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Expression, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("logical_or");
     binary(
         context,
@@ -523,8 +519,8 @@ fn logical_or<'a>(
 
 fn logical_and<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Expression, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("logical_and");
     binary(
         context,
@@ -539,8 +535,8 @@ fn logical_and<'a>(
 
 fn equality<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Expression, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("equality");
     binary(
         context,
@@ -556,8 +552,8 @@ fn equality<'a>(
 
 fn comparison<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Expression, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("comparison");
     binary(
         context,
@@ -575,8 +571,8 @@ fn comparison<'a>(
 
 fn term<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Expression, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("term");
     binary(
         context,
@@ -592,8 +588,8 @@ fn term<'a>(
 
 fn factor<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Expression, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("factor");
     binary(
         context,
@@ -609,8 +605,8 @@ fn factor<'a>(
 
 fn unary<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Expression, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("unary");
 
     let operator = match tokens.first().map(Token::token_type) {
@@ -625,8 +621,8 @@ fn unary<'a>(
 
 fn call<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Expression, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("call");
     let (mut expr, mut tokens) = primary(context, tokens)?;
 
@@ -652,10 +648,13 @@ fn call<'a>(
 }
 
 fn parameter_list<'a, T>(
-    mut tokens: &'a [Token],
+    mut tokens: &'a [Token<'a>],
     context: &ParseContext,
-    per_arg: impl Fn(&ParseContext, &'a [Token]) -> Result<(T, &'a [Token]), ParseErrorWithContext>,
-) -> Result<(Vec<T>, &'a [Token]), ParseErrorWithContext> {
+    per_arg: impl Fn(
+        &ParseContext,
+        &'a [Token<'a>],
+    ) -> Result<(T, &'a [Token<'a>]), ParseErrorWithContext<'a>>,
+) -> Result<(Vec<T>, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let mut args = Vec::new();
     loop {
         if tokens.first().map(Token::token_type) == Some(&TokenType::RightParen) {
@@ -692,8 +691,8 @@ fn parameter_list<'a, T>(
 
 fn primary<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(Expression, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(Expression, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     let _guard = context.push("primary");
     let Some(token) = tokens.first() else {
         return Err(ParseErrorWithContext {
@@ -740,9 +739,9 @@ fn primary<'a>(
 
 fn consume<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
+    tokens: &'a [Token<'a>],
     token_type: TokenType,
-) -> Result<&'a [Token], ParseErrorWithContext> {
+) -> Result<&'a [Token<'a>], ParseErrorWithContext<'a>> {
     match tokens.first().map(Token::token_type) {
         Some(t) if t == &token_type => Ok(&tokens[1..]),
         _ => Err(ParseErrorWithContext {
@@ -755,8 +754,8 @@ fn consume<'a>(
 
 fn match_identifier<'a>(
     context: &ParseContext,
-    tokens: &'a [Token],
-) -> Result<(String, &'a [Token]), ParseErrorWithContext> {
+    tokens: &'a [Token<'a>],
+) -> Result<(String, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
     match tokens.first().map(Token::token_type) {
         Some(TokenType::Identifier(name)) => Ok((name.clone(), &tokens[1..])),
         _ => Err(ParseErrorWithContext {

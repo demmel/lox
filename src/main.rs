@@ -148,9 +148,9 @@ fn compile(source: &str) -> Result<(), lox::tokenizer::TokenizeError> {
     let mut line = 0;
     loop {
         let token = tokenizer.token()?;
-        if token.span().start_line != line {
-            print!("{:4} ", token.span().start_line);
-            line = token.span().start_line;
+        if token.line != line {
+            print!("{:4} ", token.line);
+            line = token.line;
         } else {
             print!("   | ");
         }

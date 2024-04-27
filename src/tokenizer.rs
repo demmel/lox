@@ -1,5 +1,3 @@
-use crate::span::Span;
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
     // Single-character tokens
@@ -102,18 +100,16 @@ impl std::fmt::Display for TokenType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Token {
+pub struct Token<'a> {
     pub token_type: TokenType,
-    pub span: Span,
+    pub lexeme: &'a str,
+    pub line: usize,
+    pub column: usize,
 }
 
-impl Token {
+impl Token<'_> {
     pub fn token_type(&self) -> &TokenType {
         &self.token_type
-    }
-
-    pub fn span(&self) -> &Span {
-        &self.span
     }
 }
 
@@ -144,15 +140,6 @@ impl Tokenizer<'_> {
         *self = next_state;
         Ok(token)
     }
-
-    fn make_span(&self, start: usize, end: usize) -> Span {
-        Span {
-            start_line: self.line,
-            start_column: self.column + start,
-            end_line: self.line,
-            end_column: self.column + end,
-        }
-    }
 }
 
 pub fn tokens(source: &str) -> Result<Vec<Token>, TokenizeError> {
@@ -177,7 +164,8 @@ pub fn tokens(source: &str) -> Result<Vec<Token>, TokenizeError> {
 }
 
 pub fn token(mut state: Tokenizer) -> Result<(Token, Tokenizer), TokenizeError> {
-    while let Some((_, next_state)) = maximal(&[whitespace, comment], state.clone()) {
+    let parsers = [whitespace, comment];
+    while let Some((_, next_state)) = maximal(&parsers, &state) {
         state = next_state;
     }
 
@@ -185,70 +173,71 @@ pub fn token(mut state: Tokenizer) -> Result<(Token, Tokenizer), TokenizeError> 
         return Ok((
             Token {
                 token_type: TokenType::Eof,
-                span: state.make_span(0, 0),
+                lexeme: state.remaining,
+                line: state.line,
+                column: state.column,
             },
             state,
         ));
     }
 
-    maximal(
-        &[
-            // Single-character tokens
-            left_paren,
-            right_paren,
-            left_brace,
-            right_brace,
-            comma,
-            dot,
-            minus,
-            plus,
-            semicolon,
-            slash,
-            star,
-            // one or two character tokens
-            bang,
-            bang_equal,
-            equal,
-            equal_equal,
-            greater,
-            greater_equal,
-            less,
-            less_equal,
-            // keywords
-            and,
-            class,
-            else_,
-            false_,
-            fun,
-            for_,
-            if_,
-            nil,
-            or,
-            print_,
-            return_,
-            super_,
-            this,
-            true_,
-            var,
-            while_,
-            // literals
-            identifier,
-            string,
-            number,
-        ],
-        state.clone(),
-    )
-    .ok_or(TokenizeError::UnexpectedCharacter(
+    let parsers = [
+        // Single-character tokens
+        left_paren,
+        right_paren,
+        left_brace,
+        right_brace,
+        comma,
+        dot,
+        minus,
+        plus,
+        semicolon,
+        slash,
+        star,
+        // one or two character tokens
+        bang,
+        bang_equal,
+        equal,
+        equal_equal,
+        greater,
+        greater_equal,
+        less,
+        less_equal,
+        // keywords
+        and,
+        class,
+        else_,
+        false_,
+        fun,
+        for_,
+        if_,
+        nil,
+        or,
+        print_,
+        return_,
+        super_,
+        this,
+        true_,
+        var,
+        while_,
+        // literals
+        identifier,
+        string,
+        number,
+    ];
+
+    maximal(&parsers, &state).ok_or(TokenizeError::UnexpectedCharacter(
         state.remaining.chars().next().unwrap(),
         state.line,
         state.column,
     ))
 }
 
-fn maximal<'a, T: std::fmt::Debug>(
-    parsers: &[fn(Tokenizer) -> Option<(T, Tokenizer)>],
-    state: Tokenizer<'a>,
-) -> Option<(T, Tokenizer<'a>)> {
+fn maximal<'a, T, F>(parsers: &[F], state: &Tokenizer<'a>) -> Option<(T, Tokenizer<'a>)>
+where
+    F: Fn(Tokenizer<'a>) -> Option<(T, Tokenizer<'a>)>,
+{
+    let state = state.clone();
     let mut min_left = state.remaining.len() + 1;
     let mut max_match = None;
 
@@ -325,16 +314,19 @@ fn literal<'a>(
     state: Tokenizer<'a>,
     literal: &str,
     token_type: TokenType,
-) -> Option<(Token, Tokenizer<'a>)> {
+) -> Option<(Token<'a>, Tokenizer<'a>)> {
     if state.remaining.starts_with(literal) {
+        let len = literal.len();
         let count = literal.chars().count();
         Some((
             Token {
                 token_type,
-                span: state.make_span(0, count),
+                lexeme: &state.remaining[..len],
+                line: state.line,
+                column: state.column,
             },
             Tokenizer {
-                remaining: &state.remaining[literal.len()..],
+                remaining: &state.remaining[len..],
                 column: state.column + count,
                 ..state
             },
@@ -346,7 +338,7 @@ fn literal<'a>(
 
 macro_rules! literal {
     ($name:ident, $literal:expr, $token_type:expr) => {
-        fn $name(state: Tokenizer) -> Option<(Token, Tokenizer)> {
+        fn $name<'a>(state: Tokenizer<'a>) -> Option<(Token<'a>, Tokenizer<'a>)> {
             literal(state, $literal, $token_type)
         }
     };
@@ -405,7 +397,9 @@ fn identifier(state: Tokenizer) -> Option<(Token, Tokenizer)> {
         Some((
             Token {
                 token_type: TokenType::Identifier(state.remaining[..len].to_string()),
-                span: state.make_span(0, count),
+                lexeme: &state.remaining[..len],
+                line: state.line,
+                column: state.column,
             },
             Tokenizer {
                 remaining: &state.remaining[len..],
@@ -434,7 +428,9 @@ fn string(state: Tokenizer) -> Option<(Token, Tokenizer)> {
                 return Some((
                     Token {
                         token_type: TokenType::String(state.remaining[1..len - 1].to_string()),
-                        span: state.make_span(0, count),
+                        lexeme: &state.remaining[..len],
+                        line: state.line,
+                        column: state.column,
                     },
                     Tokenizer {
                         remaining: &state.remaining[len..],
@@ -485,7 +481,9 @@ fn number(state: Tokenizer) -> Option<(Token, Tokenizer)> {
         Some((
             Token {
                 token_type: TokenType::Number(state.remaining[..len].parse().unwrap()),
-                span: state.make_span(0, count),
+                lexeme: &state.remaining[..len],
+                line: state.line,
+                column: state.column,
             },
             Tokenizer {
                 remaining: &state.remaining[len..],
