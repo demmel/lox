@@ -111,6 +111,10 @@ impl Token {
     pub fn token_type(&self) -> &TokenType {
         &self.token_type
     }
+
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 #[justerror::Error]

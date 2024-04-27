@@ -6,6 +6,12 @@ pub struct Span {
     pub end_column: usize,
 }
 
+impl Span {
+    pub fn len(&self) -> usize {
+        (self.end_line - self.start_line) * 80 + self.end_column - self.start_column
+    }
+}
+
 impl std::ops::Add<Span> for Span {
     type Output = Span;
 

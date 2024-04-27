@@ -1,9 +1,6 @@
 use std::io::Write;
 
 use clap::{Args, Parser, Subcommand};
-use justerror::Error;
-
-use lox::{tree_walk_interpreter::Interpreter, vm};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -21,9 +18,7 @@ impl Cli {
 enum Command {
     Run(RunArgs),
     Repl,
-    Expand(ExpandArgs),
     Benchmark,
-    RunVM,
 }
 
 #[derive(Debug, Args)]
@@ -37,68 +32,43 @@ struct ExpandArgs {
 }
 
 fn main() {
-    match runner() {
-        Ok(()) => {}
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
-    }
-}
-
-fn runner() -> Result<(), Box<dyn std::error::Error>> {
     let args = Cli::parse();
 
     match args.command() {
         Command::Repl => {
-            repl_command()?;
+            repl_command();
         }
         Command::Run(args) => {
-            run_command(args)?;
-        }
-        Command::Expand(args) => {
-            expand_command(args)?;
+            run_command(args);
         }
         Command::Benchmark => {
-            benchmark_command()?;
-        }
-        Command::RunVM => {
-            run_vm()?;
+            benchmark_command();
         }
     }
-
-    Ok(())
 }
 
-#[Error]
-enum ReplCommandError {
-    Io(#[from] std::io::Error),
-    Tokenize(#[from] lox::tokenizer::TokenizeError),
-    Parse(#[from] lox::parser::ParseErrors),
-    Interpret(#[from] lox::tree_walk_interpreter::ExecutionError),
-}
-
-fn repl_command() -> Result<(), ReplCommandError> {
+fn repl_command() {
     println!("Welcome to the Lox REPL!");
     println!("EOF to exit. (Ctrl+D on *nix, Ctrl+Z on Windows)");
-
-    let mut interpreter = Interpreter::default();
 
     loop {
         let mut input = String::new();
 
         print!("> ");
-        std::io::stdout().flush()?;
+        std::io::stdout()
+            .flush()
+            .expect("should be able to flush stdout");
 
-        let read = std::io::stdin().read_line(&mut input)?;
+        let read = std::io::stdin()
+            .read_line(&mut input)
+            .expect("should be able to read line from stdin");
+
         if read == 0 {
             break;
         }
 
         let source = input.trim();
-        let tokens = lox::tokenizer::tokens(source)?;
-        let program = lox::parser::program(&tokens)?;
-        match interpreter.interpret(&program) {
+        match interpret(&source) {
             Ok(()) => {}
             Err(e) => {
                 println!("Error: {}", e)
@@ -107,44 +77,23 @@ fn repl_command() -> Result<(), ReplCommandError> {
 
         input.clear()
     }
-    Ok(())
 }
 
-#[Error]
-enum RuncCommandError {
-    Io(#[from] std::io::Error),
-    Tokenize(#[from] lox::tokenizer::TokenizeError),
-    Parse(#[from] lox::parser::ParseErrors),
-    Interpret(#[from] lox::tree_walk_interpreter::ExecutionError),
-}
-
-fn run_command(args: &RunArgs) -> Result<(), RuncCommandError> {
-    let source = std::fs::read_to_string(&args.file)?;
-    let tokens = lox::tokenizer::tokens(&source)?;
-    let program = lox::parser::program(&tokens)?;
-    let mut interpreter = Interpreter::default();
-    if let Err(e) = interpreter.interpret(&program) {
+fn run_command(args: &RunArgs) {
+    let source = std::fs::read_to_string(&args.file).expect("should be able to read source file");
+    if let Err(e) = interpret(&source) {
         println!("{e}");
     }
-    Ok(())
 }
 
-fn expand_command(args: &ExpandArgs) -> Result<(), Box<dyn std::error::Error>> {
-    let file = std::fs::read_to_string(&args.file)?;
-    let tokens = lox::tokenizer::tokens(&file)?;
-    let ast = lox::parser::program(&tokens)?;
-    println!("{}", ast);
-    Ok(())
-}
-
-fn benchmark_command() -> Result<(), Box<dyn std::error::Error>> {
+fn benchmark_command() {
     let source = lox_fib_source();
-    let tokens = lox::tokenizer::tokens(&source)?;
-    let program = lox::parser::program(&tokens)?;
-    let mut interpreter = Interpreter::default();
 
     let start = std::time::Instant::now();
-    interpreter.interpret(&program)?;
+    if let Err(e) = interpret(source) {
+        println!("Failed to run lox fib code: {e}");
+        std::process::exit(1);
+    }
     let lox_elapsed = start.elapsed();
     println!("Lox Took: {:?}", lox_elapsed);
 
@@ -157,8 +106,6 @@ fn benchmark_command() -> Result<(), Box<dyn std::error::Error>> {
         "Rust is {}x faster than lox-rs",
         lox_elapsed.as_secs_f64() / fib_elapsed.as_secs_f64()
     );
-
-    Ok(())
 }
 
 fn lox_fib_source() -> &'static str {
@@ -185,7 +132,35 @@ fn fib(n: i64) -> i64 {
     return fib(n - 1) + fib(n - 2);
 }
 
-fn run_vm() -> Result<(), Box<dyn std::error::Error>> {
-    vm::main()?;
+#[derive(Debug, thiserror::Error)]
+enum InterpretError {
+    #[error(transparent)]
+    Tokenize(#[from] lox::tokenizer::TokenizeError),
+}
+
+fn interpret(source: &str) -> Result<(), InterpretError> {
+    compile(source)?;
+    Ok(())
+}
+
+fn compile(source: &str) -> Result<(), lox::tokenizer::TokenizeError> {
+    let mut tokenizer = lox::tokenizer::Tokenizer::new(source);
+    let mut line = 0;
+    loop {
+        let token = tokenizer.token()?;
+        if token.span().start_line != line {
+            print!("{:4} ", token.span().start_line);
+            line = token.span().start_line;
+        } else {
+            print!("   | ");
+        }
+
+        println!("{}", token.token_type);
+
+        if token.token_type == lox::tokenizer::TokenType::Eof {
+            break;
+        }
+    }
+
     Ok(())
 }
