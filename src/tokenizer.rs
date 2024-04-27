@@ -24,9 +24,9 @@ pub enum TokenType {
     LessEqual,
 
     // Literals
-    Identifier(String),
-    String(String),
-    Number(f64),
+    Identifier,
+    String,
+    Number,
 
     // Keywords
     And,
@@ -74,9 +74,9 @@ impl std::fmt::Display for TokenType {
             TokenType::GreaterEqual => ">=",
             TokenType::Less => "<",
             TokenType::LessEqual => "<=",
-            TokenType::Identifier(id) => return write!(f, "{id}"),
-            TokenType::String(s) => return write!(f, "\"{s}\""),
-            TokenType::Number(n) => return write!(f, "{n}"),
+            TokenType::Identifier => "identifier",
+            TokenType::String => "string",
+            TokenType::Number => "number",
             TokenType::And => "and",
             TokenType::Class => "class",
             TokenType::Else => "else",
@@ -105,6 +105,16 @@ pub struct Token<'a> {
     pub lexeme: &'a str,
     pub line: usize,
     pub column: usize,
+}
+
+impl std::fmt::Display for Token<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?} {}:{} {}",
+            self.token_type, self.line, self.column, self.lexeme
+        )
+    }
 }
 
 impl Token<'_> {
@@ -396,7 +406,7 @@ fn identifier(state: Tokenizer) -> Option<(Token, Tokenizer)> {
     if len > 0 {
         Some((
             Token {
-                token_type: TokenType::Identifier(state.remaining[..len].to_string()),
+                token_type: TokenType::Identifier,
                 lexeme: &state.remaining[..len],
                 line: state.line,
                 column: state.column,
@@ -427,7 +437,7 @@ fn string(state: Tokenizer) -> Option<(Token, Tokenizer)> {
             '"' => {
                 return Some((
                     Token {
-                        token_type: TokenType::String(state.remaining[1..len - 1].to_string()),
+                        token_type: TokenType::String,
                         lexeme: &state.remaining[..len],
                         line: state.line,
                         column: state.column,
@@ -480,7 +490,7 @@ fn number(state: Tokenizer) -> Option<(Token, Tokenizer)> {
     if has_number {
         Some((
             Token {
-                token_type: TokenType::Number(state.remaining[..len].parse().unwrap()),
+                token_type: TokenType::Number,
                 lexeme: &state.remaining[..len],
                 line: state.line,
                 column: state.column,

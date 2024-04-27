@@ -703,9 +703,14 @@ fn primary<'a>(
     };
 
     match token.token_type() {
-        TokenType::Number(n) => Ok((Expression::Literal(Literal::Number(*n)), &tokens[1..])),
-        TokenType::String(s) => Ok((
-            Expression::Literal(Literal::String(s.clone())),
+        TokenType::Number => Ok((
+            Expression::Literal(Literal::Number(token.lexeme.parse().unwrap())),
+            &tokens[1..],
+        )),
+        TokenType::String => Ok((
+            Expression::Literal(Literal::String(
+                token.lexeme[1..token.lexeme.len() - 1].to_string(),
+            )),
             &tokens[1..],
         )),
         TokenType::True => Ok((Expression::Literal(Literal::Boolean(true)), &tokens[1..])),
@@ -716,9 +721,9 @@ fn primary<'a>(
             let tokens = consume(context, rest, TokenType::RightParen)?;
             Ok((Expression::Grouping(Box::new(expr)), tokens))
         }
-        TokenType::Identifier(name) => Ok((
+        TokenType::Identifier => Ok((
             Expression::Identifier {
-                name: name.clone(),
+                name: token.lexeme.to_string(),
                 scope_depth: 0,
             },
             &tokens[1..],
@@ -756,8 +761,16 @@ fn match_identifier<'a>(
     context: &ParseContext,
     tokens: &'a [Token<'a>],
 ) -> Result<(String, &'a [Token<'a>]), ParseErrorWithContext<'a>> {
-    match tokens.first().map(Token::token_type) {
-        Some(TokenType::Identifier(name)) => Ok((name.clone(), &tokens[1..])),
+    let Some(token) = tokens.first() else {
+        return Err(ParseErrorWithContext {
+            error: ParseError::ExpectedIdentifier,
+            context: context.clone(),
+            token: tokens.first().cloned(),
+        });
+    };
+
+    match token.token_type() {
+        TokenType::Identifier => Ok((token.lexeme.to_string(), &tokens[1..])),
         _ => Err(ParseErrorWithContext {
             error: ParseError::ExpectedIdentifier,
             context: context.clone(),
