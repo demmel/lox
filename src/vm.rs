@@ -1,12 +1,10 @@
-mod bytecode;
 mod stack;
 
-use self::{
-    bytecode::{Chunk, OpCode, OpCodeFromU8Error},
-    stack::Stack,
-};
+use crate::bytecode::{self, Chunk, OpCode, OpCodeFromU8Error};
 
-type Value = f64;
+use self::stack::Stack;
+
+pub type Value = f64;
 
 #[derive(Debug, thiserror::Error)]
 pub enum InterpretError {
@@ -97,32 +95,4 @@ fn binary_op(stack: &mut Stack, op: impl Fn(f64, f64) -> f64) {
     let b = stack.pop();
     let a = stack.pop();
     stack.push(op(a, b));
-}
-
-pub fn main() -> Result<(), InterpretError> {
-    let mut vm = Vm::new();
-
-    let mut chunk = Chunk::new();
-
-    let constant = chunk.add_constant(1.2);
-    chunk.add_bytecode(bytecode::OpCode::Constant, 123);
-    chunk.add_bytecode(constant, 123);
-
-    let constant = chunk.add_constant(3.4);
-    chunk.add_bytecode(bytecode::OpCode::Constant, 123);
-    chunk.add_bytecode(constant, 123);
-
-    chunk.add_bytecode(bytecode::OpCode::Add, 123);
-
-    let constant = chunk.add_constant(5.6);
-    chunk.add_bytecode(bytecode::OpCode::Constant, 123);
-    chunk.add_bytecode(constant, 123);
-
-    chunk.add_bytecode(bytecode::OpCode::Divide, 123);
-
-    chunk.add_bytecode(OpCode::Negate, 123);
-
-    chunk.add_bytecode(bytecode::OpCode::Return, 123);
-
-    vm.interpret(&chunk)
 }

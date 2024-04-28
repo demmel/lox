@@ -1,6 +1,6 @@
 use std::panic;
 
-use super::Value;
+use crate::vm::Value;
 
 #[repr(u8)]
 pub(super) enum OpCode {

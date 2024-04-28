@@ -160,8 +160,8 @@ pub struct Tokenizer<'a> {
     column: usize,
 }
 
-impl Tokenizer<'_> {
-    pub fn new<'a>(source: &'a str) -> Tokenizer<'a> {
+impl<'a> Tokenizer<'a> {
+    pub fn new(source: &'a str) -> Tokenizer<'a> {
         Tokenizer {
             remaining: source,
             line: 1,
@@ -169,10 +169,26 @@ impl Tokenizer<'_> {
         }
     }
 
-    pub fn token(&mut self) -> Result<Token, TokenizeError> {
+    pub fn token<'b>(&'b mut self) -> Result<Token<'a>, TokenizeError<'a>> {
         let (token, next_state) = token(self.clone())?;
         *self = next_state;
         Ok(token)
+    }
+
+    pub fn recover(&mut self) {
+        let mut chars = self.remaining.chars();
+        while let Some(c) = chars.next() {
+            self.column += 1;
+            if c == ';' {
+                self.remaining = chars.as_str();
+                return;
+            } else if c == '\n' {
+                self.remaining = chars.as_str();
+                self.line += 1;
+                self.column = 1;
+                return;
+            }
+        }
     }
 
     fn into_error(self, kind: TokenizeErrorKind) -> TokenizeError<'a> {
