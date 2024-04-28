@@ -123,10 +123,34 @@ impl Token<'_> {
     }
 }
 
-#[justerror::Error]
-pub enum TokenizeError {
-    #[error(desc = "Unexpected character {0} at line {1}, column {2}")]
-    UnexpectedCharacter(char, usize, usize),
+#[derive(Debug, Clone)]
+pub enum TokenizeErrorKind {
+    UnexpectedCharacter,
+}
+
+#[derive(Debug, Clone)]
+pub struct TokenizeError<'a> {
+    pub state: Tokenizer<'a>,
+    pub kind: TokenizeErrorKind,
+}
+
+impl std::error::Error for TokenizeError<'_> {}
+
+impl std::fmt::Display for TokenizeError<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.kind {
+            TokenizeErrorKind::UnexpectedCharacter => write!(
+                f,
+                "Unexpected character '{}'",
+                self.state.remaining.chars().next().unwrap(),
+            )?,
+        }
+        write!(
+            f,
+            " at line {} column {}",
+            self.state.line, self.state.column
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -149,6 +173,10 @@ impl Tokenizer<'_> {
         let (token, next_state) = token(self.clone())?;
         *self = next_state;
         Ok(token)
+    }
+
+    fn into_error(self, kind: TokenizeErrorKind) -> TokenizeError<'a> {
+        TokenizeError { state: self, kind }
     }
 }
 
@@ -236,11 +264,8 @@ pub fn token(mut state: Tokenizer) -> Result<(Token, Tokenizer), TokenizeError> 
         number,
     ];
 
-    maximal(&parsers, &state).ok_or(TokenizeError::UnexpectedCharacter(
-        state.remaining.chars().next().unwrap(),
-        state.line,
-        state.column,
-    ))
+    maximal(&parsers, &state)
+        .ok_or_else(|| state.into_error(TokenizeErrorKind::UnexpectedCharacter))
 }
 
 fn maximal<'a, T, F>(parsers: &[F], state: &Tokenizer<'a>) -> Option<(T, Tokenizer<'a>)>

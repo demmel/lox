@@ -81,27 +81,47 @@ pub enum ExecutionError {
     },
 }
 
-#[justerror::Error]
+#[derive(Debug, thiserror::Error)]
 pub enum ExecutionErrorKind {
+    #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
+    #[error("Invalid less than operation: {0} < {1}")]
     InvalidLess(Value, Value),
+    #[error("Invalid less than or equal operation: {0} <= {1}")]
     InvalidLessEqual(Value, Value),
+    #[error("Invalid greater than operation: {0} > {1}")]
     InvalidGreater(Value, Value),
+    #[error("Invalid greater than or equal operation: {0} >= {1}")]
     InvalidGreaterEqual(Value, Value),
+    #[error("Invalid addition operation: {0} + {1}")]
     InvalidAdd(Value, Value),
+    #[error("Invalid subtraction operation: {0} - {1}")]
     InvalidSub(Value, Value),
+    #[error("Invalid multiplication operation: {0} * {1}")]
     InvalidMult(Value, Value),
+    #[error("Invalid division operation: {0} / {1}")]
     InvalidDiv(Value, Value),
+    #[error("Invalid negate operation: -{0}")]
     InvalidNegate(Value, Value),
+    #[error("Invalid not operation: !{0}")]
     InvalidNot(Value),
+    #[error("Undeclared variable: {0}")]
     UndeclaredVariable(String),
+    #[error("Undeclared function: {0}")]
     UndeclaredFunction(String),
+    #[error("Not a function: {0}")]
     NotAFunction(String),
+    #[error("Invalid function call: {0} called with {1} arguments, expected {2}")]
     InvalidFunctionCall(String, usize, usize),
+    #[error("Function redeclaration: {0}")]
     FunctionRedeclaration(String),
+    #[error("Get on non-instance: {0}")]
     GetOnNonInstance(String),
+    #[error("Set on non-instance: {0}")]
     SetOnNonInstance(String),
+    #[error("Undefined property: {0}")]
     UndefinedProperty(String),
+    #[error("Not a class: {0}")]
     NotAClass(String),
 }
 
