@@ -155,7 +155,7 @@ fn compile(source: &str) -> Result<(), lox::tokenizer::TokenizeError> {
             print!("   | ");
         }
 
-        println!("{}", token.token_type);
+        println!("{:<10} {}", format!("{:?}", token.token_type), token.lexeme);
 
         if token.token_type == lox::tokenizer::TokenType::Eof {
             break;
