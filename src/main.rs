@@ -1,6 +1,8 @@
-use std::io::Write;
+use std::{cell::RefCell, io::Write, rc::Rc};
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use lox::vm::Vm;
+use thiserror::Error;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -8,46 +10,74 @@ struct Cli {
     command: Option<Command>,
 }
 
+const DEFAULT_COMMAND: Command = Command::Repl(ReplArgs {
+    interpreter: InterpreterKind::Bytecode,
+});
+
 impl Cli {
     pub fn command(&self) -> &Command {
-        self.command.as_ref().unwrap_or(&Command::Repl)
+        self.command.as_ref().unwrap_or(&DEFAULT_COMMAND)
     }
 }
 
 #[derive(Debug, Subcommand)]
 enum Command {
     Run(RunArgs),
-    Repl,
-    Benchmark,
+    Repl(ReplArgs),
+    Benchmark(BenchmarkArgs),
+}
+
+#[derive(Debug, Clone, Default, ValueEnum)]
+enum InterpreterKind {
+    #[default]
+    Bytecode,
+    TreeWalk,
+}
+
+#[derive(Debug, Args)]
+struct ReplArgs {
+    #[clap(short, long, default_value_t, value_enum)]
+    interpreter: InterpreterKind,
+}
+
+impl Default for ReplArgs {
+    fn default() -> Self {
+        Self {
+            interpreter: InterpreterKind::Bytecode,
+        }
+    }
 }
 
 #[derive(Debug, Args)]
 struct RunArgs {
     file: String,
+    #[clap(short, long, default_value_t, value_enum)]
+    interpreter: InterpreterKind,
 }
 
 #[derive(Debug, Args)]
-struct ExpandArgs {
-    file: String,
+struct BenchmarkArgs {
+    #[clap(short, long, default_value_t, value_enum)]
+    interpreter: InterpreterKind,
 }
 
 fn main() {
     let args = Cli::parse();
 
     match args.command() {
-        Command::Repl => {
-            repl_command();
+        Command::Repl(args) => {
+            repl_command(args);
         }
         Command::Run(args) => {
             run_command(args);
         }
-        Command::Benchmark => {
-            benchmark_command();
+        Command::Benchmark(args) => {
+            benchmark_command(args);
         }
     }
 }
 
-fn repl_command() {
+fn repl_command(args: &ReplArgs) {
     println!("Welcome to the Lox REPL!");
     println!("EOF to exit. (Ctrl+D on *nix, Ctrl+Z on Windows)");
 
@@ -68,7 +98,7 @@ fn repl_command() {
         }
 
         let source = input.trim();
-        match interpret(&source) {
+        match interpret(&args.interpreter, &source) {
             Ok(()) => {}
             Err(e) => {
                 println!("Error: {}", e)
@@ -81,16 +111,16 @@ fn repl_command() {
 
 fn run_command(args: &RunArgs) {
     let source = std::fs::read_to_string(&args.file).expect("should be able to read source file");
-    if let Err(e) = interpret(&source) {
+    if let Err(e) = interpret(&args.interpreter, &source) {
         println!("{e}");
     }
 }
 
-fn benchmark_command() {
+fn benchmark_command(args: &BenchmarkArgs) {
     let source = lox_fib_source();
 
     let start = std::time::Instant::now();
-    if let Err(e) = interpret(source) {
+    if let Err(e) = interpret(&args.interpreter, source) {
         println!("Failed to run lox fib code: {e}");
         std::process::exit(1);
     }
@@ -133,34 +163,76 @@ fn fib(n: i64) -> i64 {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum InterpretError {
+enum InterpretError<'a> {
     #[error(transparent)]
-    Tokenize(#[from] lox::tokenizer::TokenizeError),
+    Compile(lox::compiler::CompileError<'a>),
+    #[error(transparent)]
+    Interpret(#[from] lox::vm::InterpretError),
+    #[error(transparent)]
+    TreeWalk(TreeWalkInterpretError<'a>),
 }
 
-fn interpret(source: &str) -> Result<(), InterpretError> {
-    compile(source)?;
+impl<'a> From<lox::compiler::CompileError<'a>> for InterpretError<'a> {
+    fn from(e: lox::compiler::CompileError<'a>) -> Self {
+        Self::Compile(e)
+    }
+}
+
+impl<'a> From<TreeWalkInterpretError<'a>> for InterpretError<'a> {
+    fn from(e: TreeWalkInterpretError<'a>) -> Self {
+        Self::TreeWalk(e)
+    }
+}
+
+fn interpret<'a>(
+    interpreter_args: &InterpreterKind,
+    source: &'a str,
+) -> Result<(), InterpretError<'a>> {
+    match interpreter_args {
+        InterpreterKind::Bytecode => interpret_bytecode(source)?,
+        InterpreterKind::TreeWalk => interpret_tree_walk(source)?,
+    }
     Ok(())
 }
 
-fn compile(source: &str) -> Result<(), lox::tokenizer::TokenizeError> {
-    let mut tokenizer = lox::tokenizer::Tokenizer::new(source);
-    let mut line = 0;
-    loop {
-        let token = tokenizer.token()?;
-        if token.line != line {
-            print!("{:4} ", token.line);
-            line = token.line;
-        } else {
-            print!("   | ");
-        }
+fn interpret_bytecode(source: &str) -> Result<(), InterpretError> {
+    let mut vm = Vm::new();
 
-        println!("{:<10} {}", format!("{:?}", token.token_type), token.lexeme);
+    let chunk = lox::compiler::compile(source)?;
 
-        if token.token_type == lox::tokenizer::TokenType::Eof {
-            break;
-        }
+    vm.interpret(&chunk)?;
+
+    Ok(())
+}
+
+#[derive(Debug, Error)]
+enum TreeWalkInterpretError<'a> {
+    #[error(transparent)]
+    Tokenize(lox::tokenizer::TokenizeError<'a>),
+    #[error(transparent)]
+    Parse(lox::parser::ParseErrors<'a>),
+    #[error(transparent)]
+    Interpret(#[from] lox::tree_walk_interpreter::ExecutionError),
+}
+
+impl<'a> From<lox::tokenizer::TokenizeError<'a>> for TreeWalkInterpretError<'a> {
+    fn from(e: lox::tokenizer::TokenizeError<'a>) -> Self {
+        Self::Tokenize(e)
     }
+}
+
+impl<'a> From<lox::parser::ParseErrors<'a>> for TreeWalkInterpretError<'a> {
+    fn from(e: lox::parser::ParseErrors<'a>) -> Self {
+        Self::Parse(e)
+    }
+}
+
+fn interpret_tree_walk(source: &str) -> Result<(), TreeWalkInterpretError> {
+    let tokens = lox::tokenizer::tokens(source)?;
+    let ast = lox::parser::program(&tokens)?;
+    let mut interpreter =
+        lox::tree_walk_interpreter::Interpreter::new(Rc::new(RefCell::new(std::io::stdout())));
+    interpreter.interpret(&ast)?;
 
     Ok(())
 }
