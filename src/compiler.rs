@@ -116,6 +116,8 @@ impl<'a> Compiler<'a> {
         self.chunk.add_bytecode(OpCode::Return, self.previous.line);
 
         if self.errors.is_empty() {
+            #[cfg(feature = "disassemble")]
+            self.chunk.disassemble("code");
             Ok(self.chunk)
         } else {
             Err(CompileError {
