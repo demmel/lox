@@ -1,40 +1,252 @@
-use thiserror::Error;
-
 use crate::{
-    bytecode::Chunk,
-    tokenizer::{TokenType, TokenizeError, Tokenizer},
+    bytecode::{Chunk, OpCode},
+    tokenizer::{Token, TokenType, TokenizeError, Tokenizer},
+    vm::Value,
 };
 
-#[derive(Debug, Error)]
-pub enum CompileError<'a> {
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Precedence {
+    None,
+    Assignment, // =
+    Or,         // or
+    And,        // and
+    Equality,   // == !=
+    Comparison, // < > <= >=
+    Term,       // + -
+    Factor,     // * /
+    Unary,      // ! -
+    Call,       // . ()
+    Primary,
+}
+
+impl Precedence {
+    fn higher(&self) -> Precedence {
+        match self {
+            Precedence::None => Precedence::Assignment,
+            Precedence::Assignment => Precedence::Or,
+            Precedence::Or => Precedence::And,
+            Precedence::And => Precedence::Equality,
+            Precedence::Equality => Precedence::Comparison,
+            Precedence::Comparison => Precedence::Term,
+            Precedence::Term => Precedence::Factor,
+            Precedence::Factor => Precedence::Unary,
+            Precedence::Unary => Precedence::Call,
+            Precedence::Call => Precedence::Primary,
+            Precedence::Primary => Precedence::Primary,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct CompileError<'a> {
+    errors: Vec<CompileErrorKind<'a>>,
+}
+
+impl std::error::Error for CompileError<'_> {}
+
+impl std::fmt::Display for CompileError<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Compile error: ")?;
+        for error in &self.errors {
+            writeln!(f, "{}", error)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CompileErrorKind<'a> {
     #[error("Failed to tokenize")]
-    Tokenize { errors: Vec<TokenizeError<'a>> },
+    Tokenize(TokenizeError<'a>),
+    #[error("Expected token '{expected}', found '{found}' at line {line}")]
+    ExpectedToken {
+        expected: TokenType,
+        found: TokenType,
+        line: usize,
+    },
+    #[error("Expected one of '{expected:?}', found '{found}' at line {line}")]
+    ExpectedOneOf {
+        expected: &'static [TokenType],
+        found: TokenType,
+        line: usize,
+    },
+    #[error("Failed to parse number")]
+    ParseFloatError(#[from] std::num::ParseFloatError),
 }
 
 pub fn compile(source: &str) -> Result<Chunk, CompileError> {
-    let mut chunk = Chunk::new();
-    let mut tokenizer = Tokenizer::new(source);
-    let mut tokenizer_errors = Vec::new();
+    let tokenizer = Tokenizer::new(source);
+    let compiler_state = Compiler::new(tokenizer);
+    compiler_state.compile()
+}
 
-    loop {
-        match tokenizer.token() {
-            Ok(token) => {
-                if token.token_type == TokenType::Eof {
+struct Compiler<'a> {
+    tokenizer: Tokenizer<'a>,
+    chunk: Chunk,
+    errors: Vec<CompileErrorKind<'a>>,
+    current: Token<'a>,
+    previous: Token<'a>,
+}
+
+impl<'a> Compiler<'a> {
+    fn new(tokenizer: Tokenizer<'a>) -> Self {
+        Self {
+            tokenizer,
+            chunk: Chunk::new(),
+            errors: Vec::new(),
+            current: Token {
+                lexeme: "",
+                token_type: TokenType::Eof,
+                line: 1,
+                column: 1,
+            },
+            previous: Token {
+                lexeme: "",
+                token_type: TokenType::Eof,
+                line: 1,
+                column: 1,
+            },
+        }
+    }
+
+    fn compile(mut self) -> Result<Chunk, CompileError<'a>> {
+        self.advance();
+        self.expression();
+        self.consume(TokenType::Eof);
+        self.chunk.add_bytecode(OpCode::Return, self.previous.line);
+
+        if self.errors.is_empty() {
+            Ok(self.chunk)
+        } else {
+            Err(CompileError {
+                errors: self.errors,
+            })
+        }
+    }
+
+    fn advance(&mut self) {
+        self.previous = self.current.clone();
+        loop {
+            match self.tokenizer.token() {
+                Ok(token) => {
+                    self.current = token;
                     break;
                 }
-            }
-            Err(e) => {
-                tokenizer_errors.push(e);
-                tokenizer.recover();
+                Err(e) => {
+                    self.log_error(CompileErrorKind::Tokenize(e));
+                }
             }
         }
     }
 
-    if !tokenizer_errors.is_empty() {
-        return Err(CompileError::Tokenize {
-            errors: tokenizer_errors,
-        });
+    fn consume(&mut self, token_type: TokenType) {
+        if self.current.token_type == token_type {
+            self.advance();
+        } else {
+            self.log_error(CompileErrorKind::ExpectedToken {
+                expected: token_type,
+                found: self.current.token_type,
+                line: self.current.line,
+            });
+        }
     }
 
-    Ok(chunk)
+    fn log_error(&mut self, error: CompileErrorKind<'a>) {
+        self.errors.push(error);
+        self.tokenizer.recover();
+    }
+
+    fn precedence(&mut self, precedence: Precedence) {
+        self.advance();
+        match self.previous.token_type {
+            TokenType::LeftParen => self.grouping(),
+            TokenType::Minus => self.unary(),
+            TokenType::Number => self.number(),
+            t => {
+                self.log_error(CompileErrorKind::ExpectedOneOf {
+                    expected: &[TokenType::LeftParen, TokenType::Minus, TokenType::Number],
+                    found: t,
+                    line: self.previous.line,
+                });
+            }
+        }
+
+        while precedence <= get_token_type_inifix_precedence(&self.current.token_type) {
+            self.advance();
+            match self.previous.token_type {
+                TokenType::Plus | TokenType::Minus | TokenType::Star | TokenType::Slash => {
+                    self.binary();
+                }
+                _ => {
+                    self.log_error(CompileErrorKind::ExpectedOneOf {
+                        expected: &[
+                            TokenType::Plus,
+                            TokenType::Minus,
+                            TokenType::Star,
+                            TokenType::Slash,
+                        ],
+                        found: self.previous.token_type,
+                        line: self.previous.line,
+                    });
+                }
+            }
+        }
+    }
+
+    fn expression(&mut self) {
+        self.precedence(Precedence::Assignment);
+    }
+
+    fn grouping(&mut self) {
+        self.expression();
+        self.consume(TokenType::RightParen);
+    }
+
+    fn unary(&mut self) {
+        let token = self.previous.clone();
+        self.precedence(Precedence::Unary);
+        match token.token_type {
+            TokenType::Minus => self.chunk.add_bytecode(OpCode::Negate, token.line),
+            _ => unreachable!(),
+        }
+    }
+
+    fn binary(&mut self) {
+        let token = self.previous.clone();
+        let precedence = get_token_type_inifix_precedence(&token.token_type);
+        self.precedence(precedence.higher());
+        match token.token_type {
+            TokenType::Plus => self.chunk.add_bytecode(OpCode::Add, token.line),
+            TokenType::Minus => self.chunk.add_bytecode(OpCode::Subtract, token.line),
+            TokenType::Star => self.chunk.add_bytecode(OpCode::Multiply, token.line),
+            TokenType::Slash => self.chunk.add_bytecode(OpCode::Divide, token.line),
+            _ => unreachable!(),
+        }
+    }
+
+    fn number(&mut self) {
+        let token = self.previous.clone();
+        let number = match token.lexeme.parse::<f64>() {
+            Ok(number) => number,
+            Err(e) => {
+                self.log_error(e.into());
+                return;
+            }
+        };
+        self.emit_constant(number, &token);
+    }
+
+    fn emit_constant(&mut self, value: Value, token: &Token<'_>) {
+        let c = self.chunk.add_constant(value);
+        self.chunk.add_bytecode(OpCode::Constant, token.line);
+        self.chunk.add_bytecode(c, token.line);
+    }
+}
+
+fn get_token_type_inifix_precedence(token_type: &TokenType) -> Precedence {
+    match token_type {
+        TokenType::Plus | TokenType::Minus => Precedence::Term,
+        TokenType::Star | TokenType::Slash => Precedence::Factor,
+        _ => Precedence::None,
+    }
 }

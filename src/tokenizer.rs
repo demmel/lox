@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenType {
     // Single-character tokens
     LeftParen,
@@ -93,7 +93,7 @@ impl std::fmt::Display for TokenType {
             TokenType::True => "true",
             TokenType::Var => "var",
             TokenType::While => "while",
-            TokenType::Eof => "",
+            TokenType::Eof => "<eof>",
         };
         write!(f, "{repr}")
     }
@@ -181,11 +181,6 @@ impl<'a> Tokenizer<'a> {
             self.column += 1;
             if c == ';' {
                 self.remaining = chars.as_str();
-                return;
-            } else if c == '\n' {
-                self.remaining = chars.as_str();
-                self.line += 1;
-                self.column = 1;
                 return;
             }
         }
