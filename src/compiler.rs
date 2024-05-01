@@ -81,39 +81,24 @@ pub fn compile(source: &str) -> Result<Chunk, CompileError> {
 }
 
 struct Compiler<'a> {
-    tokenizer: Tokenizer<'a>,
+    tokenizer: PeekableTokenizer<'a>,
     chunk: Chunk,
     errors: Vec<CompileErrorKind<'a>>,
-    current: Token<'a>,
-    previous: Token<'a>,
 }
 
 impl<'a> Compiler<'a> {
     fn new(tokenizer: Tokenizer<'a>) -> Self {
         Self {
-            tokenizer,
+            tokenizer: PeekableTokenizer::new(tokenizer),
             chunk: Chunk::new(),
             errors: Vec::new(),
-            current: Token {
-                lexeme: "",
-                token_type: TokenType::Eof,
-                line: 1,
-                column: 1,
-            },
-            previous: Token {
-                lexeme: "",
-                token_type: TokenType::Eof,
-                line: 1,
-                column: 1,
-            },
         }
     }
 
     fn compile(mut self) -> Result<Chunk, CompileError<'a>> {
-        self.advance();
         self.expression();
-        self.consume(TokenType::Eof);
-        self.chunk.add_bytecode(OpCode::Return, self.previous.line);
+        let token = self.consume(TokenType::Eof);
+        self.chunk.add_bytecode(OpCode::Return, token.line);
 
         if self.errors.is_empty() {
             #[cfg(feature = "disassemble")]
@@ -126,57 +111,66 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn advance(&mut self) {
-        self.previous = self.current.clone();
+    fn peek(&mut self) -> Token<'a> {
         loop {
-            match self.tokenizer.token() {
-                Ok(token) => {
-                    self.current = token;
-                    break;
-                }
-                Err(e) => {
-                    self.log_error(CompileErrorKind::Tokenize(e));
-                }
+            if let Err(e) = self.tokenizer.peek() {
+                self.errors.push(CompileErrorKind::Tokenize(e));
+                self.tokenizer.recover();
+            } else {
+                return self.tokenizer.peek().unwrap();
             }
         }
     }
 
-    fn consume(&mut self, token_type: TokenType) {
-        if self.current.token_type == token_type {
-            self.advance();
-        } else {
-            self.log_error(CompileErrorKind::ExpectedToken {
-                expected: token_type,
-                found: self.current.token_type,
-                line: self.current.line,
-            });
+    fn advance(&mut self) -> Token<'a> {
+        loop {
+            if let Err(e) = self.tokenizer.peek() {
+                self.errors.push(CompileErrorKind::Tokenize(e));
+                self.tokenizer.recover();
+            } else {
+                return self.tokenizer.next().unwrap();
+            }
         }
     }
 
-    fn log_error(&mut self, error: CompileErrorKind<'a>) {
-        self.errors.push(error);
-        self.tokenizer.recover();
+    fn consume(&mut self, token_type: TokenType) -> Token<'a> {
+        let token = self.advance();
+        if token.token_type != token_type {
+            self.errors.push(CompileErrorKind::ExpectedToken {
+                expected: token_type,
+                found: token.token_type,
+                line: token.line,
+            });
+        }
+        token
     }
 
     fn precedence(&mut self, precedence: Precedence) {
-        self.advance();
-        match self.previous.token_type {
+        let token = self.peek();
+        match token.token_type {
             TokenType::LeftParen => self.grouping(),
             TokenType::Minus | TokenType::Bang => self.unary(),
             TokenType::Number => self.number(),
             TokenType::Nil | TokenType::True | TokenType::False => self.literal(),
             t => {
-                self.log_error(CompileErrorKind::ExpectedOneOf {
-                    expected: &[TokenType::LeftParen, TokenType::Minus, TokenType::Number],
+                self.errors.push(CompileErrorKind::ExpectedOneOf {
+                    expected: &[
+                        TokenType::LeftParen,
+                        TokenType::Minus,
+                        TokenType::Number,
+                        TokenType::Nil,
+                        TokenType::True,
+                        TokenType::False,
+                    ],
                     found: t,
-                    line: self.previous.line,
+                    line: token.line,
                 });
             }
         }
 
-        while precedence <= get_token_type_inifix_precedence(&self.current.token_type) {
-            self.advance();
-            match self.previous.token_type {
+        let mut token = self.peek();
+        while precedence <= get_token_type_inifix_precedence(&token.token_type) {
+            match token.token_type {
                 TokenType::Plus
                 | TokenType::Minus
                 | TokenType::Star
@@ -190,18 +184,25 @@ impl<'a> Compiler<'a> {
                     self.binary();
                 }
                 _ => {
-                    self.log_error(CompileErrorKind::ExpectedOneOf {
+                    self.errors.push(CompileErrorKind::ExpectedOneOf {
                         expected: &[
                             TokenType::Plus,
                             TokenType::Minus,
                             TokenType::Star,
                             TokenType::Slash,
+                            TokenType::BangEqual,
+                            TokenType::EqualEqual,
+                            TokenType::Greater,
+                            TokenType::GreaterEqual,
+                            TokenType::Less,
+                            TokenType::LessEqual,
                         ],
-                        found: self.previous.token_type,
-                        line: self.previous.line,
+                        found: token.token_type,
+                        line: token.line,
                     });
                 }
             }
+            token = self.peek();
         }
     }
 
@@ -210,12 +211,13 @@ impl<'a> Compiler<'a> {
     }
 
     fn grouping(&mut self) {
+        self.advance();
         self.expression();
         self.consume(TokenType::RightParen);
     }
 
     fn unary(&mut self) {
-        let token = self.previous.clone();
+        let token = self.advance();
         self.precedence(Precedence::Unary);
         match token.token_type {
             TokenType::Minus => self.chunk.add_bytecode(OpCode::Negate, token.line),
@@ -225,7 +227,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn binary(&mut self) {
-        let token = self.previous.clone();
+        let token = self.advance();
         let precedence = get_token_type_inifix_precedence(&token.token_type);
         self.precedence(precedence.higher());
         match token.token_type {
@@ -253,11 +255,11 @@ impl<'a> Compiler<'a> {
     }
 
     fn number(&mut self) {
-        let token = self.previous.clone();
+        let token = self.advance();
         let number = match token.lexeme.parse::<f64>() {
             Ok(number) => number,
             Err(e) => {
-                self.log_error(e.into());
+                self.errors.push(e.into());
                 return;
             }
         };
@@ -265,10 +267,11 @@ impl<'a> Compiler<'a> {
     }
 
     fn literal(&mut self) {
-        match self.previous.token_type {
-            TokenType::True => self.chunk.add_bytecode(OpCode::True, self.previous.line),
-            TokenType::False => self.chunk.add_bytecode(OpCode::False, self.previous.line),
-            TokenType::Nil => self.chunk.add_bytecode(OpCode::Nil, self.previous.line),
+        let token = self.advance();
+        match token.token_type {
+            TokenType::True => self.chunk.add_bytecode(OpCode::True, token.line),
+            TokenType::False => self.chunk.add_bytecode(OpCode::False, token.line),
+            TokenType::Nil => self.chunk.add_bytecode(OpCode::Nil, token.line),
             _ => unreachable!(),
         }
     }
@@ -284,6 +287,75 @@ fn get_token_type_inifix_precedence(token_type: &TokenType) -> Precedence {
     match token_type {
         TokenType::Plus | TokenType::Minus => Precedence::Term,
         TokenType::Star | TokenType::Slash => Precedence::Factor,
+        TokenType::BangEqual | TokenType::EqualEqual => Precedence::Equality,
+        TokenType::Greater | TokenType::GreaterEqual | TokenType::Less | TokenType::LessEqual => {
+            Precedence::Comparison
+        }
         _ => Precedence::None,
+    }
+}
+
+struct PeekableTokenizer<'a> {
+    tokenizer: Tokenizer<'a>,
+    peeked: Option<Token<'a>>,
+}
+
+impl<'a> PeekableTokenizer<'a> {
+    fn new(tokenizer: Tokenizer<'a>) -> Self {
+        Self {
+            tokenizer,
+            peeked: None,
+        }
+    }
+
+    fn peek(&mut self) -> Result<Token<'a>, TokenizeError<'a>> {
+        if self.peeked.is_none() {
+            self.peeked = Some(self.tokenizer.token()?);
+        }
+        Ok(self.peeked.clone().unwrap())
+    }
+
+    fn next(&mut self) -> Result<Token<'a>, TokenizeError> {
+        if let Some(peeked) = self.peeked.take() {
+            Ok(peeked)
+        } else {
+            self.tokenizer.token()
+        }
+    }
+
+    fn recover(&mut self) {
+        self.tokenizer.recover();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compile() {
+        let source = "1 + 2 * 3 - 4 / 5";
+        let chunk = compile(source).unwrap();
+        let expected = vec![
+            OpCode::Constant as u8,
+            0,
+            OpCode::Constant as u8,
+            1,
+            OpCode::Constant as u8,
+            2,
+            OpCode::Multiply as u8,
+            OpCode::Add as u8,
+            OpCode::Constant as u8,
+            3,
+            OpCode::Constant as u8,
+            4,
+            OpCode::Divide as u8,
+            OpCode::Subtract as u8,
+            OpCode::Return as u8,
+        ];
+
+        for (i, &bytecode) in expected.iter().enumerate() {
+            assert_eq!(bytecode, chunk.get_bytecode(i));
+        }
     }
 }
