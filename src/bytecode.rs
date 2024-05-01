@@ -5,10 +5,17 @@ use crate::vm::Value;
 #[repr(u8)]
 pub(super) enum OpCode {
     Constant,
+    Nil,
+    True,
+    False,
+    Equal,
+    Greater,
+    Less,
     Add,
     Subtract,
     Multiply,
     Divide,
+    Not,
     Negate,
     Return,
     Sentinel,
@@ -67,10 +74,10 @@ impl Chunk {
     }
 
     pub fn get_cosntant(&self, index: u8) -> Value {
-        *self
-            .constants
+        self.constants
             .get(index as usize)
             .expect("VM should only request valid constants")
+            .clone()
     }
 
     pub fn add_constant(&mut self, value: Value) -> u8 {
@@ -105,11 +112,18 @@ impl Chunk {
             OpCode::Constant => {
                 let constant = self.code[offset + 1];
                 println!(
-                    "{:<16} {:4} '{}'",
+                    "{:<16} {:4} '{:?}'",
                     "OP_CONSTANT", constant, self.constants[constant as usize]
                 );
                 offset + 2
             }
+            OpCode::Nil => simple_instruction("OP_NIL", offset),
+            OpCode::True => simple_instruction("OP_TRUE", offset),
+            OpCode::False => simple_instruction("OP_FALSE", offset),
+            OpCode::Equal => simple_instruction("OP_EQUAL", offset),
+            OpCode::Greater => simple_instruction("OP_GREATER", offset),
+            OpCode::Less => simple_instruction("OP_LESS", offset),
+            OpCode::Not => simple_instruction("OP_NOT", offset),
             OpCode::Negate => simple_instruction("OP_NEGATE", offset),
             OpCode::Add => simple_instruction("OP_ADD", offset),
             OpCode::Subtract => simple_instruction("OP_SUBTRACT", offset),

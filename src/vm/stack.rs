@@ -28,11 +28,8 @@ impl Stack {
             .expect("VM shouldn't underflow the Stack")
     }
 
-    pub fn top(&self) -> Value {
-        *self
-            .storage
-            .last()
-            .expect("VM shouldn't underflow the stack")
+    pub fn peek(&self, distance: usize) -> &Value {
+        &self.storage[self.storage.len() - 1 - distance]
     }
 }
 
@@ -40,7 +37,7 @@ impl Display for Stack {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "          ")?;
         for value in self.storage.iter() {
-            write!(f, "[ {:>8.2} ]", value)?;
+            write!(f, "[ {:>8.2?} ]", value)?;
         }
         Ok(())
     }

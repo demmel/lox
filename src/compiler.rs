@@ -162,8 +162,9 @@ impl<'a> Compiler<'a> {
         self.advance();
         match self.previous.token_type {
             TokenType::LeftParen => self.grouping(),
-            TokenType::Minus => self.unary(),
+            TokenType::Minus | TokenType::Bang => self.unary(),
             TokenType::Number => self.number(),
+            TokenType::Nil | TokenType::True | TokenType::False => self.literal(),
             t => {
                 self.log_error(CompileErrorKind::ExpectedOneOf {
                     expected: &[TokenType::LeftParen, TokenType::Minus, TokenType::Number],
@@ -176,7 +177,16 @@ impl<'a> Compiler<'a> {
         while precedence <= get_token_type_inifix_precedence(&self.current.token_type) {
             self.advance();
             match self.previous.token_type {
-                TokenType::Plus | TokenType::Minus | TokenType::Star | TokenType::Slash => {
+                TokenType::Plus
+                | TokenType::Minus
+                | TokenType::Star
+                | TokenType::Slash
+                | TokenType::BangEqual
+                | TokenType::EqualEqual
+                | TokenType::Greater
+                | TokenType::GreaterEqual
+                | TokenType::Less
+                | TokenType::LessEqual => {
                     self.binary();
                 }
                 _ => {
@@ -209,6 +219,7 @@ impl<'a> Compiler<'a> {
         self.precedence(Precedence::Unary);
         match token.token_type {
             TokenType::Minus => self.chunk.add_bytecode(OpCode::Negate, token.line),
+            TokenType::Bang => self.chunk.add_bytecode(OpCode::Not, token.line),
             _ => unreachable!(),
         }
     }
@@ -222,6 +233,21 @@ impl<'a> Compiler<'a> {
             TokenType::Minus => self.chunk.add_bytecode(OpCode::Subtract, token.line),
             TokenType::Star => self.chunk.add_bytecode(OpCode::Multiply, token.line),
             TokenType::Slash => self.chunk.add_bytecode(OpCode::Divide, token.line),
+            TokenType::BangEqual => {
+                self.chunk.add_bytecode(OpCode::Equal, token.line);
+                self.chunk.add_bytecode(OpCode::Not, token.line);
+            }
+            TokenType::EqualEqual => self.chunk.add_bytecode(OpCode::Equal, token.line),
+            TokenType::Greater => self.chunk.add_bytecode(OpCode::Greater, token.line),
+            TokenType::GreaterEqual => {
+                self.chunk.add_bytecode(OpCode::Less, token.line);
+                self.chunk.add_bytecode(OpCode::Not, token.line);
+            }
+            TokenType::Less => self.chunk.add_bytecode(OpCode::Less, token.line),
+            TokenType::LessEqual => {
+                self.chunk.add_bytecode(OpCode::Greater, token.line);
+                self.chunk.add_bytecode(OpCode::Not, token.line);
+            }
             _ => unreachable!(),
         }
     }
@@ -235,7 +261,16 @@ impl<'a> Compiler<'a> {
                 return;
             }
         };
-        self.emit_constant(number, &token);
+        self.emit_constant(Value::Number(number), &token);
+    }
+
+    fn literal(&mut self) {
+        match self.previous.token_type {
+            TokenType::True => self.chunk.add_bytecode(OpCode::True, self.previous.line),
+            TokenType::False => self.chunk.add_bytecode(OpCode::False, self.previous.line),
+            TokenType::Nil => self.chunk.add_bytecode(OpCode::Nil, self.previous.line),
+            _ => unreachable!(),
+        }
     }
 
     fn emit_constant(&mut self, value: Value, token: &Token<'_>) {
