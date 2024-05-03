@@ -1,4 +1,6 @@
-use std::{cell::RefCell, collections::HashMap, fmt::Display, rc::Rc};
+use std::{cell::RefCell, fmt::Display, rc::Rc};
+
+use rustc_hash::FxHashMap;
 
 use crate::ast::{Expression, FunctionDecl};
 
@@ -99,7 +101,7 @@ impl Callable {
             Callable::ClassConstructor(class) => {
                 let instance = Rc::new(RefCell::new(Instance {
                     class: class.clone(),
-                    fields: HashMap::new(),
+                    fields: FxHashMap::default(),
                 }));
                 if let Some(init) = class.methods.get("init") {
                     init.bind(&instance)?.call(interpreter, args)?;

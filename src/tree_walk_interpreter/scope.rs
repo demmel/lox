@@ -1,9 +1,6 @@
-use std::{
-    cell::RefCell,
-    collections::{hash_map::Entry, HashMap},
-    fmt::Debug,
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::hash_map::Entry, fmt::Debug, rc::Rc};
+
+use rustc_hash::FxHashMap;
 
 use super::{callable::Callable, Class, ExecutionErrorKind, Value};
 
@@ -16,7 +13,7 @@ pub enum Declarable {
 
 #[derive(Clone)]
 pub struct Scope {
-    declarables: HashMap<String, Declarable>,
+    declarables: FxHashMap<String, Declarable>,
     parent: Option<Rc<RefCell<Scope>>>,
     is_function: bool,
 }
@@ -28,7 +25,7 @@ impl Scope {
 
     pub fn new(parent: Option<Rc<RefCell<Scope>>>, is_function: bool) -> Self {
         Self {
-            declarables: HashMap::new(),
+            declarables: FxHashMap::default(),
             parent,
             is_function,
         }

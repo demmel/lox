@@ -11,6 +11,7 @@ disassemble = []
 
 [dependencies]
 clap = { version = "4.5.4", features = ["derive"] }
+rustc-hash = "1.1.0"
 thiserror = "1.0.58"
 
 [profile.release]

@@ -1,5 +1,7 @@
 use std::{collections::HashMap, rc::Rc};
 
+use rustc_hash::FxHashMap;
+
 use super::{callable::CallableFunction, Value};
 
 pub struct Class {
@@ -33,7 +35,7 @@ impl Class {
 
 pub struct Instance {
     pub class: Rc<Class>,
-    pub fields: HashMap<String, Value>,
+    pub fields: FxHashMap<String, Value>,
 }
 
 impl std::fmt::Debug for Instance {

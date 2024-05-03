@@ -1,5 +1,6 @@
 use core::panic;
-use std::collections::HashMap;
+
+use rustc_hash::FxHashMap;
 
 use crate::ast::{Expression, FunctionDecl, Program, Statement};
 
@@ -25,7 +26,7 @@ enum ClassType {
 }
 
 pub struct Resolver {
-    scopes: Vec<HashMap<String, BindingState>>,
+    scopes: Vec<FxHashMap<String, BindingState>>,
     function_type: FunctionType,
     class_type: ClassType,
 }
@@ -51,7 +52,7 @@ pub enum ResolverError {
 impl Resolver {
     pub fn new() -> Resolver {
         Resolver {
-            scopes: vec![HashMap::new()],
+            scopes: vec![FxHashMap::default()],
             function_type: FunctionType::None,
             class_type: ClassType::None,
         }
@@ -279,7 +280,7 @@ impl Resolver {
     }
 
     fn begin_scope(&mut self) {
-        self.scopes.push(HashMap::new());
+        self.scopes.push(FxHashMap::default());
     }
 
     fn end_scope(&mut self) {
