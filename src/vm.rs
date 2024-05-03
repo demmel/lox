@@ -4,25 +4,12 @@ use crate::bytecode::{Chunk, OpCode, OpCodeFromU8Error};
 
 use self::stack::Stack;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Number(f64),
     Boolean(bool),
     Nil,
 }
-
-impl PartialEq for Value {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Value::Number(a), Value::Number(b)) => a == b,
-            (Value::Boolean(a), Value::Boolean(b)) => a == b,
-            (Value::Nil, Value::Nil) => true,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for Value {}
 
 impl Value {
     fn is_truthy(&self) -> bool {
@@ -107,48 +94,35 @@ impl<'a> Vm<'a> {
                 OpCode::Nil => self.stack.push(Value::Nil),
                 OpCode::True => self.stack.push(Value::Boolean(true)),
                 OpCode::False => self.stack.push(Value::Boolean(false)),
-                OpCode::Equal => binary_op(&mut self.stack, |a, b| Ok(Value::Boolean(a == b)))?,
-                OpCode::Greater => binary_op(&mut self.stack, |a, b| {
-                    if let (Value::Number(a), Value::Number(b)) = (a, b) {
-                        Ok(Value::Boolean(a > b))
-                    } else {
-                        Err(RuntimeError::InvalidArithmeticValues(a, b))
-                    }
+                OpCode::Equal => binary_op(&mut self.stack, |a, b| match (a, b) {
+                    (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a == b)),
+                    (Value::Boolean(a), Value::Boolean(b)) => Ok(Value::Boolean(a == b)),
+                    (Value::Nil, Value::Nil) => Ok(Value::Boolean(true)),
+                    _ => Ok(Value::Boolean(false)),
                 })?,
-                OpCode::Less => binary_op(&mut self.stack, |a, b| {
-                    if let (Value::Number(a), Value::Number(b)) = (a, b) {
-                        Ok(Value::Boolean(a < b))
-                    } else {
-                        Err(RuntimeError::InvalidArithmeticValues(a, b))
-                    }
+                OpCode::Greater => binary_op(&mut self.stack, |a, b| match (a, b) {
+                    (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a > b)),
+                    (a, b) => Err(RuntimeError::InvalidArithmeticValues(a, b)),
                 })?,
-                OpCode::Add => binary_op(&mut self.stack, |a, b| {
-                    if let (Value::Number(a), Value::Number(b)) = (a, b) {
-                        Ok(Value::Number(a + b))
-                    } else {
-                        Err(RuntimeError::InvalidArithmeticValues(a, b))
-                    }
+                OpCode::Less => binary_op(&mut self.stack, |a, b| match (a, b) {
+                    (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a < b)),
+                    (a, b) => Err(RuntimeError::InvalidArithmeticValues(a, b)),
                 })?,
-                OpCode::Subtract => binary_op(&mut self.stack, |a, b| {
-                    if let (Value::Number(a), Value::Number(b)) = (a, b) {
-                        Ok(Value::Number(a - b))
-                    } else {
-                        Err(RuntimeError::InvalidArithmeticValues(a, b))
-                    }
+                OpCode::Add => binary_op(&mut self.stack, |a, b| match (a, b) {
+                    (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
+                    (a, b) => Err(RuntimeError::InvalidArithmeticValues(a, b)),
                 })?,
-                OpCode::Multiply => binary_op(&mut self.stack, |a, b| {
-                    if let (Value::Number(a), Value::Number(b)) = (a, b) {
-                        Ok(Value::Number(a * b))
-                    } else {
-                        Err(RuntimeError::InvalidArithmeticValues(a, b))
-                    }
+                OpCode::Subtract => binary_op(&mut self.stack, |a, b| match (a, b) {
+                    (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a - b)),
+                    (a, b) => Err(RuntimeError::InvalidArithmeticValues(a, b)),
                 })?,
-                OpCode::Divide => binary_op(&mut self.stack, |a, b| {
-                    if let (Value::Number(a), Value::Number(b)) = (a, b) {
-                        Ok(Value::Number(a / b))
-                    } else {
-                        Err(RuntimeError::InvalidArithmeticValues(a, b))
-                    }
+                OpCode::Multiply => binary_op(&mut self.stack, |a, b| match (a, b) {
+                    (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a * b)),
+                    (a, b) => Err(RuntimeError::InvalidArithmeticValues(a, b)),
+                })?,
+                OpCode::Divide => binary_op(&mut self.stack, |a, b| match (a, b) {
+                    (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a / b)),
+                    (a, b) => Err(RuntimeError::InvalidArithmeticValues(a, b)),
                 })?,
                 OpCode::Not => {
                     let value = self.stack.pop();
